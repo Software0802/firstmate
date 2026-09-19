@@ -290,15 +290,44 @@ fm_send_normalize_key() { # <key>
   esac
 }
 
+# fm_send_deliver_interrupt_repeats: an Escape on this plane IS the interrupt,
+# and two verified adapters cancel only on a DOUBLE press - opencode, and devin,
+# whose running-turn status row says so itself by rewriting `esc twice to
+# interrupt` into `esc again to interrupt` after the first press while the turn
+# carries on. HOW MANY presses an adapter needs belongs to the one control-plane
+# capability table (bin/fm-control-lib.sh), the same table fm_send_clear_after_interrupt
+# reads and the same one bin/fm-control.sh's interrupt verb reads, so the
+# remaining presses are delivered here back to back the way that verb delivers
+# them: a devin press that arrived seconds later was absorbed and the turn
+# carried on. A harness with no verified repeat count keeps the single press it
+# has always had. This must land BEFORE the record is closed, or an armed but
+# still running turn would be reported idle.
+fm_send_deliver_interrupt_repeats() { # <key>
+  local key=$1 family repeat i=1
+  [ "$key" = Escape ] || return 0
+  [ "$TARGET_BACKEND" != remote ] || return 0
+  family=$(fm_control_harness_family "$TARGET_HARNESS") || return 0
+  repeat=$(fm_control_interrupt_repeat "$family") || return 0
+  while [ "$i" -lt "$repeat" ]; do
+    sleep 0.2
+    if ! fm_backend_send_key "$TARGET_BACKEND" "$T" "$key" "$EXPECTED_LABEL"; then
+      echo "error: Escape reached $T, but $TARGET_HARNESS needs $repeat presses to interrupt and press $((i + 1)) was not delivered; its turn may still be running." >&2
+      return 1
+    fi
+    i=$((i + 1))
+  done
+}
+
 # fm_send_record_interrupt: the adapters whose own wiring fires NOTHING on a
-# manual interrupt need the control plane to close the busy record, or a
-# cancelled turn reads busy to every supervisor until some later turn ends.
+# manual interrupt need this plane to close the busy record, or a cancelled
+# turn reads busy to every supervisor until some later turn ends.
 # claude has always been one; devin is the other (verified live, devin
 # 3000.10.31: its Stop hook does not fire on an interrupt). Every other
 # converted adapter closes its own record - gemini's AfterAgent fires on a
 # cancelled turn - so forging an event for them would overwrite adapter-owned
 # truth. fm-interrupt is a firstmate-owned source every converted adapter
-# accepts (bin/fm-busy-lib.sh).
+# accepts (bin/fm-busy-lib.sh). This runs only after the adapter's FULL
+# interrupt sequence landed, so it can never report idle for a running turn.
 fm_send_record_interrupt() { # <key>
   local key=$1 id gen
   [ "$key" = Escape ] || return 0
@@ -757,6 +786,7 @@ if [ "${1:-}" = "--key" ]; then
     echo "error: key '$key' not sent to $T ($TARGET_BACKEND send failed; tried $RESOLUTION_TRIED)" >&2
     exit 1
   fi
+  fm_send_deliver_interrupt_repeats "$semantic_key" || exit 1
   fm_send_clear_after_interrupt "$semantic_key" || exit 1
   fm_send_record_interrupt "$semantic_key" || exit 1
 else

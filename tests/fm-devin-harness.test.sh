@@ -252,8 +252,9 @@ test_devin_classify_reads_its_hook_record() {
   busy=$(fm_busy_classify tmux fake:win devin devin-case-1 "$statedir" '')
   [ "$busy" = "busy devin-hook" ] \
     || fail "UserPromptSubmit must classify 'busy devin-hook', got '$busy'"
-  # A manual interrupt fires NO devin hook, so the record stays busy. That is
-  # the claude gap, deliberately not papered over with a forged idle event.
+  # A manual interrupt fires NO devin hook of any kind, which is why nothing
+  # devin-owned appears between these two events; closing the record after an
+  # interrupt is fm-send's Escape path, covered in tests/fm-send-settle.test.sh.
   "$ROOT/bin/fm-busy-event.sh" apply "$statedir" devin-case-1 idle \
     --gen "$gen" --source devin-hook --event session-end >/dev/null \
     || fail "a devin SessionEnd event must be accepted"

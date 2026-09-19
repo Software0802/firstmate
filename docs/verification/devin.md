@@ -114,7 +114,9 @@ One interactive pane, three prompts, then `/exit`, with every hook appending its
 Three prompts against two `Stop` events is the load-bearing asymmetry: the second prompt was cancelled with a manual interrupt and fired NO `Stop`, and none arrived in the fifteen seconds after.
 The third prompt's `Stop` then closed the record.
 So devin's own wiring leaves a cancelled turn open - the claude gap, not gemini's self-closing one - and `fm_control_interrupt_ack_source devin` is `none` for that reason: the cancellation is rendered, never recorded by the adapter.
-The control plane closes the record instead, exactly as it does for claude: `fm_send_record_interrupt` in `bin/fm-send.sh` writes an `idle`/`fm-interrupt` event after a successful Escape, so a cancelled devin turn does not read busy to every supervisor until some later turn's `Stop` arrives.
+`bin/fm-send.sh --key Escape` closes the record instead, the same path that has always closed claude's: it delivers the adapter's verified interrupt sequence, reading the press count from `fm_control_interrupt_repeat` rather than assuming one, and only then writes an `idle`/`fm-interrupt` event.
+That ordering is load-bearing for devin specifically, because a single Escape merely ARMS the second press and the turn carries on, so recording after one press would report idle for a running worker.
+`bin/fm-control.sh <id> interrupt` delivers the same two presses but records nothing, which is claude's long-standing posture on that verb and not a devin-specific gap.
 `tests/fm-devin-signals-live-e2e.test.sh` asserts that gap is still open, so a release that closes it fails loudly instead of leaving an unverified assumption in place.
 
 A hook command needs no stdout JSON, unlike gemini's: every probe hook wrote only to a file and devin's lifecycle was unaffected.
