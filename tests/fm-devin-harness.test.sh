@@ -20,13 +20,15 @@
 #      devin hook fires while that dialog is up, so the spawn pre-registers the
 #      worktree in devin's own trusted_paths store through
 #      bin/fm-devin-trust.sh (scope-refused for anything but a linked worktree
-#      of the project, and recording the RESOLVED path devin compares) and the
-#      post-launch gate is the backstop: it answers a dialog that renders
-#      anyway, and it reports success only once devin's own SessionStart hook
-#      has written the session sidecar - never on the seeded busy record.
+#      of the project, and recording the RESOLVED path devin compares and
+#      nothing wider) and the post-launch gate is the backstop: it answers a
+#      dialog that renders anyway, and it reports success only once THIS
+#      launch's own SessionStart hook has written the session sidecar - never
+#      on the seeded busy record and never on a predecessor's sidecar.
 #   6. The per-task config MERGES the captain's own user config, because
 #      --config replaces that whole layer, and it forces attribution off so no
-#      worker adds a Co-Authored-By trailer.
+#      worker adds a Co-Authored-By trailer and pins claude config import off
+#      so a worktree's .claude hooks never fire inside a devin session.
 #   7. devin is a crewmate/scout adapter only: a secondmate launch is refused.
 #   8. The busy signature is the pinned `esc twice|again to interrupt` token
 #      alone, scoped to harness=devin and never borrowed across adapters.
@@ -328,7 +330,8 @@ test_devin_trust_registers_the_resolved_worktree_path() {
   ln -s "$WT_DIR" "$link"
   out=$(run_devin_trust "$HOME_DIR" "$link" "$PROJ_DIR") || fail "a fresh linked worktree must be trusted: $out"
   assert_devin_trusted "$store" "$WT_DIR" "the resolved worktree path devin compares against was not registered"
-  assert_devin_trusted "$store" "$link" "the logical (symlinked) path was not recorded alongside the resolved one"
+  assert_devin_not_trusted "$store" "$link" \
+    "registration widened the store with a logical path devin never compares against"
   assert_devin_trusted "$store" "/home/someone/elsewhere" "registration dropped an existing trusted_paths entry"
   [ "$(devin_store_value "$store" schema)" = 2 ] \
     || fail "registration did not preserve an unrelated store key"
@@ -499,7 +502,7 @@ EOF
   printf 'devin\n' > "$home/config/crew-harness"
   # The captain's own user config, which --config replaces and the spawn must
   # therefore merge rather than discard.
-  printf '%s\n' '{"theme_mode":"dark","devin":{"org_id":"org-test"},"agent":{"model":"swe-2-max"},"attribution":true}' \
+  printf '%s\n' '{"theme_mode":"dark","devin":{"org_id":"org-test"},"agent":{"model":"swe-2-max"},"attribution":true,"read_config_from":{"cursor":true,"claude":true}}' \
     > "$home/.config/devin/config.json"
   printf '%s\n' '{"trusted_paths":["/home/someone/elsewhere"]}' \
     > "$home/.local/share/devin/cli/trusted_workspaces.json"
@@ -538,7 +541,7 @@ run_devin_spawn() {
     FM_FAKE_DEVIN_STATE="$case_dir/devin.state" \
     FM_FAKE_DEVIN_STORE="$home/.local/share/devin/cli/trusted_workspaces.json" \
     FM_FAKE_DEVIN_SESSION_MARKER="$home/state/$id.devin-session" \
-    FM_FAKE_DEVIN_MODELS_BODY="$DEVIN_MODELS_BODY" \
+    FM_FAKE_DEVIN_MODELS_BODY="${FM_FAKE_DEVIN_MODELS_BODY:-$DEVIN_MODELS_BODY}" \
     FM_FAKE_DEVIN_MODELS_FAIL="${FM_FAKE_DEVIN_MODELS_FAIL:-0}" \
     FM_FAKE_DEVIN_MODELS_HANG="${FM_FAKE_DEVIN_MODELS_HANG:-0}" \
     FM_FAKE_DEVIN_IGNORE_TRUST="${FM_FAKE_DEVIN_IGNORE_TRUST:-0}" \
@@ -590,6 +593,14 @@ test_devin_config_merges_the_user_config_and_forces_attribution_off() {
     || fail "the per-task config must force devin's commit attribution off"
   [ "$(devin_store_value "$cfg" theme_mode)" = '"dark"' ] \
     || fail "--config replaces the user layer, so the per-task config must preserve the captain's own keys"
+  node -e 'const j=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));
+    if (j.read_config_from?.claude !== false) {
+      console.error("claude config import is not pinned off"); process.exit(1); }
+    if (j.read_config_from.cursor !== true) {
+      console.error("the captain'"'"'s other config importers were dropped"); process.exit(1); }
+    if ("agents_standard" in j.read_config_from) {
+      console.error("only claude may be pinned; agents_standard must keep its default"); process.exit(1); }' "$cfg" \
+    || fail "the per-task config must stop devin importing claude's hook files without disabling the rest"
   node -e 'const j=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));
     const want=["SessionStart","UserPromptSubmit","Stop","SessionEnd"];
     for (const k of want) { if (!Array.isArray(j.hooks[k])) { console.error("missing hook "+k); process.exit(1); } }
@@ -653,6 +664,25 @@ test_devin_accepts_family_ids_and_aliases() {
       "devin launch dropped the accepted token '$token'"
   done
   pass "fm-spawn: devin accepts concrete ids, family ids, and aliases from its listing"
+}
+
+test_devin_accepts_a_family_id_from_a_padded_header() {
+  local id rec out rc body
+  id="devin-padhdr-z12-$$"
+  rec=$(make_devin_spawn_case padhdr "$id")
+  read_devin_spawn_record "$rec"
+  # The same listing shape with trailing blanks on one family header, which a
+  # terminal-formatted catalog can carry. printf keeps the padding explicit so
+  # no whitespace-trimming tool can quietly retire this case.
+  body=$(printf '%s\n\nSWE-3 (swe-3)  \n  swe-3-medium    SWE-3 Medium  [262K context, Free]\n' \
+    "$DEVIN_MODELS_BODY")
+  rc=0
+  out=$(FM_FAKE_DEVIN_MODELS_BODY="$body" run_devin_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" \
+    "$WT_DIR" "$FAKEBIN_DIR" "$id" --model swe-3) || rc=$?
+  expect_code 0 "$rc" "a family id whose header is padded must still be listed: $out"
+  assert_contains "$(cat "$CASE_DIR/launch.log")" "--model 'swe-3'" \
+    "the padded family header dropped its model from the launch"
+  pass "fm-spawn: devin reads a family id from a header with trailing blanks"
 }
 
 test_devin_unreachable_listing_launches_unvalidated() {
@@ -733,6 +763,25 @@ test_devin_gate_fails_the_spawn_when_no_session_starts() {
   pass "fm-spawn: a devin pane whose session never starts fails the spawn and is cleaned up"
 }
 
+test_devin_gate_ignores_a_sidecar_from_a_previous_incarnation() {
+  local id rec out rc marker
+  id="devin-stalesidecar-z13-$$"
+  rec=$(make_devin_spawn_case stalesidecar "$id")
+  read_devin_spawn_record "$rec"
+  # A spawn that timed out just as its predecessor's SessionStart landed leaves
+  # this file behind, and a plain re-dispatch of the same task id retires no
+  # wiring. Only this launch's own session may satisfy the gate.
+  marker="$HOME_DIR/state/$id.devin-session"
+  printf '{"hook_event_name":"SessionStart","session_id":"previous-incarnation"}' > "$marker"
+  rc=0
+  out=$(FM_FAKE_DEVIN_IGNORE_TRUST=1 FM_FAKE_DEVIN_ANSWER=stuck \
+    run_devin_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model swe-2-medium) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a stale session sidecar must not satisfy the readiness gate"
+  assert_contains "$out" "did not start its session" "the gate failure lacked its concrete reason"
+  pass "fm-spawn: the devin gate ignores a session sidecar left by a previous incarnation"
+}
+
 test_devin_secondmate_launch_is_refused() {
   local id rec out rc
   id="devin-secondmate-z11-$$"
@@ -770,9 +819,11 @@ test_devin_config_merges_the_user_config_and_forces_attribution_off
 test_devin_effort_is_recorded_but_never_launched
 test_devin_unlisted_model_refuses_before_pane_creation
 test_devin_accepts_family_ids_and_aliases
+test_devin_accepts_a_family_id_from_a_padded_header
 test_devin_unreachable_listing_launches_unvalidated
 test_devin_hung_listing_is_cut_off_and_launches
 test_devin_spawn_pre_registers_trust_and_skips_the_dialog
 test_devin_gate_answers_a_dialog_that_renders_anyway
 test_devin_gate_fails_the_spawn_when_no_session_starts
+test_devin_gate_ignores_a_sidecar_from_a_previous_incarnation
 test_devin_secondmate_launch_is_refused

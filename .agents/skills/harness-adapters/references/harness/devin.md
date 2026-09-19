@@ -10,7 +10,7 @@ Verified as a CREWMATE and SCOUT adapter only; `../../../../../bin/fm-spawn.sh` 
 |---|---|
 | Binary | Absolute `devin` from `PATH`, refused if absent; a compiled single binary reached through a versioned symlink, so the live process name is exactly `devin`. It runs a two-process model - the front end plus a `devin acp` agent child - and both report `comm=devin`. |
 | Launch | `devin --config <per-task config> --permission-mode dangerous --model <id> -- "<brief>"`, with the resolved absolute binary; the brief auto-submits with no extra Enter. The spawn pre-registers the worktree in devin's trust store first, then waits for devin's own `SessionStart` hook to write the session sidecar (answering the folder-trust dialog if it renders anyway) before reporting success. |
-| Busy state | Semantic `devin-hook`: `UserPromptSubmit` opens a turn, `Stop` and `SessionEnd` close it. `Stop` does NOT fire on a manual interrupt, so a cancelled turn stays busy until the next turn's `Stop` closes it - the claude gap, not the gemini one. |
+| Busy state | Semantic `devin-hook`: `UserPromptSubmit` opens a turn, `Stop` and `SessionEnd` close it. `Stop` does NOT fire on a manual interrupt - the claude gap, not the gemini one - so `fm-send`'s Escape path closes the record with `idle`/`fm-interrupt` for devin exactly as it does for claude. |
 | Rendered tail | Not a state source, but the running turn's status row carries the one stable ASCII busy token: `(esc twice to interrupt)`, which becomes `(esc again to interrupt)` after a single Escape and is absent when idle. The phase word beside the braille spinner is model-driven and varied between `Thinking` and `Running tools` inside one turn; neither it nor the spinner is ever a signal. |
 | Turn end | `Stop` fires once per COMPLETED turn carrying `stop_hook_active`, `last_assistant_message`, `session_id`, and `prompt_id`, and keeps the `state/<id>.turn-ended` touch as the watcher NOTIFICATION. `SessionEnd` fires once on `/exit` with reason `prompt_input_exit`. |
 | Exit | `/exit` (alias `/quit`), ONE Enter; the slash popup does not swallow it for an exact match. The process exits and prints `Resume this session with 'devin -r <session-id>'`. |
@@ -32,11 +32,12 @@ Every task worktree is a path devin has never seen, so an unregistered launch st
 
 devin honours a `trusted_paths` entry written ahead of launch, so `../../../../../bin/fm-spawn.sh` pre-registers the worktree through `../../../../../bin/fm-devin-trust.sh` before launch, the claude and agy shape: the helper refuses anything but a linked worktree of the spawning project, writes only the launching user's own store, and preserves every other key and entry.
 The store is `<data>/devin/cli/trusted_workspaces.json`, where `<data>` follows `XDG_DATA_HOME` and defaults to `~/.local/share`.
-devin compares the RESOLVED path, the opposite of agy: trusting only a symlink's own path still refused, naming the resolved target, so the resolved form is the load-bearing entry and the logical one is recorded beside it only when the two differ.
+devin compares the RESOLVED path, the opposite of agy: trusting only a symlink's own path still refused, naming the resolved target, so the resolved form is the one entry the helper writes and no logical alias is added beside it.
 A trusted directory covers its subdirectories.
 
 The post-launch readiness gate is the backstop: it answers a dialog that renders anyway with a single Enter, then requires the `state/<id>.devin-session` sidecar devin's own `SessionStart` hook writes.
 That sidecar, not a busy verdict, is the proof, because this adapter ARMS its busy contract at spawn and the seeded record would read busy before devin had even started.
+The spawn clears that sidecar before launching, so a file left by a previous incarnation of the same task id can never answer the gate for a pane that is still on the dialog.
 A pane whose session cannot be confirmed fails the spawn, records the failure in the task status, and closes the endpoint.
 Never steer into a pane still showing the dialog; a spawn that reported success has already cleared it.
 
@@ -70,6 +71,10 @@ Writing a bare hooks object there would silently drop their org binding, default
 Credentials are not in that file, so the merged copy carries no secret.
 It is deliberately NOT the worktree's `.devin/config.json`, which is a PROJECT-committed path, and devin's project and project-local layers still load and take precedence over it, so a project's own hooks and permissions keep working.
 
+The same config pins `read_config_from.claude: false`.
+devin imports Claude Code's config by default, so without that pin a worker in a firstmate worktree would load the repo's committed `.claude/settings.json` and run claude's `PreToolUse` and `Stop` hooks against `$CLAUDE_PROJECT_DIR`, which devin never sets.
+`read_config_from` is an object of per-source booleans and the captain's own entries are merged under the pin, so only `claude` is disabled and `agents_standard` keeps carrying `AGENTS.md` to the worker.
+
 `UserPromptSubmit` records busy, `Stop` records idle and keeps the `state/<id>.turn-ended` touch as the watcher NOTIFICATION, `SessionEnd` records idle so an abnormal end cannot strand a busy record, and `SessionStart` writes the session sidecar instead of a busy event.
 Each hook drains its stdin payload so devin never writes into a closed pipe, and each busy command tolerates a refused event so a stale-generation writer can never break devin's own lifecycle.
 devin's hook contract needs no stdout JSON, unlike gemini's.
@@ -82,4 +87,4 @@ Unsupported and unverified.
 `../../../../../docs/supervision-protocols/` carries no devin protocol, no turn-end guard adapter exists for it, no pre-tool watcher-arm seatbelt has been built for its `PreToolUse` event, and this adapter verified only the crewmate-side launch, busy state, interrupt, and exit.
 `references/common/primary-hooks.md`'s unsupported-boundary rule applies: never invent a wake protocol from a similar TUI.
 devin's hook surface makes a future primary integration plausible - it exposes `PreToolUse`, `PostToolUse`, `PermissionRequest`, `UserPromptSubmit`, `Stop`, `PostCompaction`, `SessionStart`, and `SessionEnd` - but it remains unbuilt work, not a fact to rely on.
-devin also reads Claude Code's own hook files by default, so any future primary work must settle how firstmate's claude hooks behave under a devin session before relying on either.
+devin also reads Claude Code's own hook files by default, which the crewmate config turns off; any future primary work that wants that import back must first establish devin's blocking semantics for a failed `PreToolUse` hook.

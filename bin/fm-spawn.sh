@@ -1702,8 +1702,10 @@ devin_model_ids() {
   awk '
     /^[[:space:]]*$/ { next }
     /^[^[:space:]]/ {
-      if (match($0, /\(([^()[:space:]]+)\)[[:space:]]*$/)) {
-        id = substr($0, RSTART + 1, RLENGTH - 2)
+      header = $0
+      sub(/[[:space:]]+$/, "", header)
+      if (match(header, /\([^()[:space:]]+\)$/)) {
+        id = substr(header, RSTART + 1, RLENGTH - 2)
         if (id != "") print id
       }
       next
@@ -4067,10 +4069,11 @@ EOF
       # pane: SessionStart once, UserPromptSubmit once per prompt, Stop once per
       # COMPLETED turn, SessionEnd once on /exit with reason prompt_input_exit.
       # devin fires NO hook for a manual interrupt - the same gap claude has, and
-      # unlike gemini - so a cancelled turn leaves its record busy until the next
-      # turn's Stop closes it; fm-control preserves that adapter-owned state
-      # rather than forging an idle event. Stop keeps the turn-ended
-      # NOTIFICATION touch for the watcher.
+      # unlike gemini - so the control plane closes the record itself: the
+      # Escape path in bin/fm-send.sh writes idle/fm-interrupt for devin exactly
+      # as it does for claude, or a cancelled turn would read busy to every
+      # supervisor until some later turn's Stop closed it. Stop keeps the
+      # turn-ended NOTIFICATION touch for the watcher.
       # SessionStart writes the session sidecar instead of a busy event: it is
       # the spawn's readiness proof (NO devin hook fires while the folder-trust
       # dialog is on screen, verified live, so the sidecar appearing is positive
@@ -4082,6 +4085,11 @@ EOF
       busy_cmd_prefix="$(shell_quote "$FM_ROOT/bin/fm-busy-event.sh") apply $(shell_quote "$STATE_REAL") $(shell_quote "$ID")"
       busy_suffix="--gen $(shell_quote "$BUSY_GEN") --source devin-hook"
       devin_session_marker="$STATE_REAL/$ID.devin-session"
+      # A sidecar left by a previous incarnation of this task id would satisfy
+      # the readiness gate on its first poll, so the gate would report a started
+      # session for a pane that may still be parked on the folder-trust dialog.
+      # Only this launch's own SessionStart may answer that gate.
+      rm -f "$devin_session_marker"
       devin_config="$STATE_REAL/$ID.devin-config.json"
       devin_user_config="${XDG_CONFIG_HOME:-$HOME/.config}/devin/config.json"
       command -v node >/dev/null 2>&1 || {
@@ -4098,6 +4106,16 @@ EOF
       # commit and PR a worker makes, which AGENTS.md section 1 forbids. It is a
       # USER-layer-only option, which is the other reason this rides --config
       # rather than a project-layer hooks file.
+      # read_config_from.claude=false is not optional either: devin imports
+      # ~/.claude/settings.json and the project's .claude/settings.json by
+      # default, so a devin crewmate in a firstmate worktree would otherwise run
+      # claude's PreToolUse and Stop hooks, which resolve "$CLAUDE_PROJECT_DIR"
+      # - a variable devin does not set - and fail on every tool call and turn
+      # end. Verified on devin 3000.10.31: read_config_from is an object of
+      # per-source booleans (cursor, windsurf, claude, opencode, zed, copilot,
+      # agents_standard) and a bad value is reported against that default map.
+      # Only claude is pinned off; agents_standard stays on, so AGENTS.md still
+      # reaches the worker.
       if ! node - "$devin_user_config" "$devin_config" \
         "cat >/dev/null; $busy_cmd_prefix busy $busy_suffix --event user-prompt-submit >/dev/null 2>&1 || true" \
         "cat >/dev/null; touch $(shell_quote "$TURNEND"); $busy_cmd_prefix idle $busy_suffix --event stop >/dev/null 2>&1 || true" \
@@ -4120,9 +4138,12 @@ if (root === null || typeof root !== "object" || Array.isArray(root)) {
   process.exit(1);
 }
 root.attribution = false;
+const obj = (value) =>
+  value && typeof value === "object" && !Array.isArray(value) ? value : {};
+root.read_config_from = { ...obj(root.read_config_from), claude: false };
 const one = (command) => [{ hooks: [{ type: "command", command }] }];
 root.hooks = {
-  ...(root.hooks && typeof root.hooks === "object" && !Array.isArray(root.hooks) ? root.hooks : {}),
+  ...obj(root.hooks),
   SessionStart: one(onSessionStart),
   UserPromptSubmit: one(onPrompt),
   Stop: one(onStop),

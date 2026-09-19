@@ -19,9 +19,8 @@
 #
 # devin compares the RESOLVED path, not the logical one: trusting only a
 # symlink's own path still refused, naming the resolved target. The resolved
-# form is therefore the load-bearing entry; the logical form is recorded
-# alongside it when the two differ, so a future release that compares the
-# logical path the way agy does is covered without another live round.
+# form is therefore the ONE entry this helper writes; a logical alias would
+# widen a global trust store for a comparison devin does not make.
 #
 # bin/fm-spawn.sh keeps a post-launch gate as the backstop: it answers the
 # dialog once if one renders anyway and requires the firstmate-owned session
@@ -52,7 +51,6 @@ PROJ_ARG=$2
 refuse() { echo "error: refusing to pre-register devin trust: $1" >&2; exit 1; }
 
 real_dir() { (cd -P -- "$1" 2>/dev/null && pwd -P); }
-logical_dir() { (cd -- "$1" 2>/dev/null && pwd -L); }
 real_file() { node -e 'process.stdout.write(require("node:fs").realpathSync(process.argv[1]))' "$1" 2>/dev/null; }
 
 common_dir_of() {
@@ -63,8 +61,6 @@ common_dir_of() {
 
 WT_REAL=$(real_dir "$WT_ARG") || true
 [ -n "$WT_REAL" ] || refuse "worktree '$WT_ARG' is not an accessible directory"
-WT_LOGICAL=$(logical_dir "$WT_ARG") || true
-[ -n "$WT_LOGICAL" ] || WT_LOGICAL=$WT_REAL
 PROJ_REAL=$(real_dir "$PROJ_ARG") || true
 [ -n "$PROJ_REAL" ] || refuse "project '$PROJ_ARG' is not an accessible directory"
 
@@ -121,12 +117,11 @@ fi
 # after it, the bin/fm-agy-trust.sh shape: devin itself rewrites this file when
 # a worker answers a dialog, so a store that moved under us is retried once and
 # then refused rather than clobbered.
-if ! node - "$STORE" "$WT_REAL" "$WT_LOGICAL" <<'NODE'
+if ! node - "$STORE" "$WT_REAL" <<'NODE'
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const [store, ...wanted] = process.argv.slice(2);
-const paths = [...new Set(wanted)];
+const [store, wanted] = process.argv.slice(2);
 const readStore = () => {
   try {
     return fs.readFileSync(store);
@@ -138,7 +133,7 @@ const readStore = () => {
 const fingerprint = (buf) =>
   buf === null ? "absent" : crypto.createHash("sha256").update(buf).digest("hex");
 const listed = (root) =>
-  Array.isArray(root.trusted_paths) && paths.every((p) => root.trusted_paths.includes(p));
+  Array.isArray(root.trusted_paths) && root.trusted_paths.includes(wanted);
 const attempt = () => {
   const original = readStore();
   const before = fingerprint(original);
@@ -157,9 +152,7 @@ const attempt = () => {
     throw new Error(`${store} has a non-array "trusted_paths" value`);
   }
   if (listed(root)) return "recorded";
-  for (const p of paths) {
-    if (!root.trusted_paths.includes(p)) root.trusted_paths.push(p);
-  }
+  root.trusted_paths.push(wanted);
   const unique = `${process.pid}.${crypto.randomBytes(8).toString("hex")}`;
   const tmp = path.join(path.dirname(store), `.trusted_workspaces.json.fm-trust.${unique}`);
   fs.writeFileSync(tmp, `${JSON.stringify(root, null, 2)}\n`, { mode: 0o600, flag: "wx" });
@@ -186,15 +179,11 @@ try {
   console.error(`error: ${err.message}`);
   process.exit(1);
 }
-console.error(`error: ${store} did not retain trust for ${paths.join(", ")} after 3 attempts`);
+console.error(`error: ${store} did not retain trust for ${wanted} after 3 attempts`);
 process.exit(1);
 NODE
 then
   refuse "could not record trust for '$WT_REAL' in '$STORE'"
 fi
 
-if [ "$WT_LOGICAL" != "$WT_REAL" ]; then
-  echo "trusted: $WT_REAL ($WT_LOGICAL)"
-else
-  echo "trusted: $WT_REAL"
-fi
+echo "trusted: $WT_REAL"

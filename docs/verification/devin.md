@@ -87,12 +87,14 @@ Three properties were established by controlled probes, each with only the named
 - devin compares the RESOLVED path: with only the symlink `/tmp/.../linkdir` trusted, a run from that logical cwd still refused, naming `/tmp/.../realdir`.
 - A trusted directory covers its subdirectories: with only `<probe>/proj` trusted, a run from `<probe>/proj/subdir` succeeded.
 
-`bin/fm-devin-trust.sh` therefore records the resolved form as the load-bearing entry and the logical form beside it only when the two differ, which is the opposite of agy's logical comparison.
+`bin/fm-devin-trust.sh` therefore records the resolved form and only the resolved form, which is the opposite of agy's logical comparison.
+A logical alias for a path devin never compares against would widen a global trust store for nothing.
 
 The decisive property for the readiness gate is that NO devin hook fires while the dialog is on screen.
 An untrusted launch carrying a `--config` with four hooks left the hook log directory completely empty for as long as the dialog was up, and `SessionStart` landed only after the Enter that answered it.
 The `state/<id>.devin-session` sidecar that hook writes is therefore positive proof of two facts at once: devin cleared the dialog, and it loaded firstmate's config.
 That is why the gate waits for the sidecar rather than for a busy verdict: this adapter arms its busy contract at spawn, so the seeded `busy/fm-spawn` record would read busy before devin had even started.
+The spawn clears the sidecar beside the per-task config it composes, before the launch, because that proof is only worth anything for THIS incarnation: a spawn whose gate expired just as its predecessor's `SessionStart` landed leaves the file behind, and a plain re-dispatch of the same task id retires no wiring.
 
 `--respect-workspace-trust false` also suppresses the check, and unlike gemini's `--skip-trust` it leaves project configuration loaded - all four hooks from a project `.devin/hooks.v1.json` fired under it in an untrusted directory.
 The adapter still does not use it: an explicit per-worktree grant is auditable where a blanket per-launch bypass is not.
@@ -111,7 +113,8 @@ One interactive pane, three prompts, then `/exit`, with every hook appending its
 
 Three prompts against two `Stop` events is the load-bearing asymmetry: the second prompt was cancelled with a manual interrupt and fired NO `Stop`, and none arrived in the fifteen seconds after.
 The third prompt's `Stop` then closed the record.
-So a cancelled devin turn stays busy until the next turn ends - the claude gap, not gemini's self-closing one - and `fm_control_interrupt_ack_source devin` is `none` for that reason.
+So devin's own wiring leaves a cancelled turn open - the claude gap, not gemini's self-closing one - and `fm_control_interrupt_ack_source devin` is `none` for that reason: the cancellation is rendered, never recorded by the adapter.
+The control plane closes the record instead, exactly as it does for claude: `fm_send_record_interrupt` in `bin/fm-send.sh` writes an `idle`/`fm-interrupt` event after a successful Escape, so a cancelled devin turn does not read busy to every supervisor until some later turn's `Stop` arrives.
 `tests/fm-devin-signals-live-e2e.test.sh` asserts that gap is still open, so a release that closes it fails loudly instead of leaving an unverified assumption in place.
 
 A hook command needs no stdout JSON, unlike gemini's: every probe hook wrote only to a file and devin's lifecycle was unaffected.
@@ -128,6 +131,10 @@ Credentials are not in that file - `devin auth status` reports them at `<data>/d
 `attribution` is the other reason the config rides the user layer: devin defaults it ON, adding a `Generated with [Devin]` line and a `Co-Authored-By` trailer to every commit and pull request, and `devin --help`'s own config reference marks it USER-ONLY, unavailable in a project layer.
 `AGENTS.md` section 1 forbids an agent commit co-author, so the composed config sets `attribution: false`, the same shape the claude adapter uses for its per-launch attribution policy.
 Project and project-local layers still load and take precedence over the file, so a project's own hooks and permissions keep working.
+
+`read_config_from.claude: false` is the third key the spawn pins, and for the same reason: devin imports Claude Code's config by default, so a devin crewmate dispatched into a firstmate worktree would load that repo's committed `.claude/settings.json` and run claude's `PreToolUse` and `Stop` hooks, every one of which resolves `$CLAUDE_PROJECT_DIR` - a variable devin does not set, because it sets `DEVIN_PROJECT_DIR` instead.
+The shape of the key was measured on devin 3000.10.31 rather than assumed: a deliberately wrong value makes devin report `Ignoring invalid value for "read_config_from" ...  Using the default ({"cursor":null,"windsurf":null,"claude":null,"opencode":null,"zed":null,"copilot":null,"agents_standard":null})`, and `{"read_config_from":{"claude":false}}` is accepted with no warning.
+Only `claude` is pinned, and the captain's own entries are merged under it, so `agents_standard` keeps its default and `AGENTS.md` still reaches the worker.
 
 ## Rendered surface
 
@@ -248,8 +255,9 @@ Native resume.
 
 macOS, because every measurement above is Linux, and paid-model launches, for the account reason above.
 
-devin's own import of Claude Code hook files (`~/.claude/settings.json` and the project's `.claude/settings.json`, loaded by default through `read_config_from.claude`).
-Firstmate's claude turn-end wiring could therefore reach a devin session, which does not affect this crewmate adapter because its own hooks ride the replaced user layer, but which must be settled before any devin primary work.
+What devin's claude import actually does to a session, because the crewmate adapter turns it off rather than measuring it.
+The per-task config pins `read_config_from.claude: false`, whose accepted shape was measured live, so neither `~/.claude/settings.json` nor a worktree's `.claude/settings.json` reaches a devin worker.
+Any future devin primary work that wants that import back has to establish devin's blocking semantics for a failed `PreToolUse` hook first.
 
 Whether `subagents_enabled` should be forced off for a worker.
 devin defaults it on, and `docs/subagent-guard.md` scopes that concern to a PRIMARY creating work outside firstmate's durable records, which a crewmate does not, so the default is left in place deliberately rather than by omission.

@@ -290,10 +290,19 @@ fm_send_normalize_key() { # <key>
   esac
 }
 
+# fm_send_record_interrupt: the adapters whose own wiring fires NOTHING on a
+# manual interrupt need the control plane to close the busy record, or a
+# cancelled turn reads busy to every supervisor until some later turn ends.
+# claude has always been one; devin is the other (verified live, devin
+# 3000.10.31: its Stop hook does not fire on an interrupt). Every other
+# converted adapter closes its own record - gemini's AfterAgent fires on a
+# cancelled turn - so forging an event for them would overwrite adapter-owned
+# truth. fm-interrupt is a firstmate-owned source every converted adapter
+# accepts (bin/fm-busy-lib.sh).
 fm_send_record_interrupt() { # <key>
   local key=$1 id gen
   [ "$key" = Escape ] || return 0
-  case "$TARGET_HARNESS" in claude*) : ;; *) return 0 ;; esac
+  case "$TARGET_HARNESS" in claude* | devin) : ;; *) return 0 ;; esac
   [ -n "$TARGET_META" ] || return 0
   id=$(fm_send_id_from_meta "$TARGET_META")
   [ -f "$STATE/$id.busy-gen" ] || return 0
@@ -305,7 +314,7 @@ fm_send_record_interrupt() { # <key>
     "$FM_ROOT/bin/fm-busy-event.sh" apply "$STATE" "$id" idle \
       --current-gen --source fm-interrupt --event interrupt
   fi || {
-    echo "error: key '$key' reached $T, but the Claude interrupt state could not be recorded for $id" >&2
+    echo "error: key '$key' reached $T, but the $TARGET_HARNESS interrupt state could not be recorded for $id" >&2
     return 1
   }
 }

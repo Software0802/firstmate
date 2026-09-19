@@ -119,29 +119,37 @@ test_key_path_never_pauses() {
   pass "fm-send: the --key path never pauses (settle scoped to text submit)"
 }
 
-test_claude_escape_records_interrupt_idle() {
-  local dir fb log rc home gen out
-  dir="$TMP_ROOT/claude-interrupt"; mkdir -p "$dir"
+# An adapter whose own wiring fires nothing on a manual interrupt needs this
+# plane to close the record, or a cancelled turn reads busy to every supervisor
+# until some later turn ends. claude and devin are both such adapters.
+assert_escape_records_interrupt_idle() {  # <harness>
+  local harness=$1 dir fb log rc home gen out
+  dir="$TMP_ROOT/$harness-interrupt"; mkdir -p "$dir"
   fb=$(make_stubs "$dir"); log="$dir/sleep.log"
   home="$dir/home"; mkdir -p "$home/state"
   fm_write_meta "$home/state/task.meta" \
     "window=sess:win" "worktree=$home/wt" "project=$home/project" \
-    "harness=claude" "kind=ship" "mode=no-mistakes" "yolo=off"
+    "harness=$harness" "kind=ship" "mode=no-mistakes" "yolo=off"
   gen=$("$ROOT/bin/fm-busy-event.sh" arm "$home/state" task)
   printf 'busy_gen=%s\n' "$gen" >> "$home/state/task.meta"
   : > "$log"
 
   env PATH="$fb:$PATH" FM_HOME="$home" FM_SLEEP_LOG="$log" \
     "$SEND" task --key Escape 2>/dev/null; rc=$?
-  expect_code 0 "$rc" "Claude Escape send should succeed"
-  out=$(fm_busy_classify tmux sess:win claude task "$home/state")
+  expect_code 0 "$rc" "$harness Escape send should succeed"
+  out=$(fm_busy_classify tmux sess:win "$harness" task "$home/state")
   [ "$out" = "idle fm-interrupt" ] \
-    || fail "Claude Escape must classify idle/fm-interrupt, got '$out'"
-  pass "fm-send: a successful Claude Escape records the interrupt lifecycle edge"
+    || fail "$harness Escape must classify idle/fm-interrupt, got '$out'"
+}
+
+test_escape_records_interrupt_idle() {
+  assert_escape_records_interrupt_idle claude
+  assert_escape_records_interrupt_idle devin
+  pass "fm-send: a successful Escape records the interrupt lifecycle edge for claude and devin"
 }
 
 test_default_send_pauses_one_second
 test_zero_disables_pause
 test_pause_is_tunable
 test_key_path_never_pauses
-test_claude_escape_records_interrupt_idle
+test_escape_records_interrupt_idle
