@@ -90,6 +90,10 @@ Switching harness is therefore one ordinary relaunch rather than a separate mech
 - If the launch owner already published the new record but no running agent can be confirmed, the new record is kept: the task is recorded on the new harness with no agent confirmed, which is exactly what recovery reconciles.
   Rewriting it back to the old harness would be a second, worse inaccuracy.
 
+Every one of those failures keeps the endpoint the relaunch adopted.
+A launch-then-confirm adapter whose readiness gate fails closes the endpoint it launched itself, so a half-started autonomous agent is never left running outside task control, but a relaunch adopts the task's recorded endpoint rather than creating one, so closing it would destroy the endpoint this verb promises to reuse and leave the record naming a window that is gone.
+The adopted endpoint therefore stays open and reachable through this plane, and the relaunch can simply be retried.
+
 ## Fail-closed boundaries
 
 - Targeting is exact.

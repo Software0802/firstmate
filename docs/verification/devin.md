@@ -96,6 +96,9 @@ The `state/<id>.devin-session` sidecar that hook writes is therefore positive pr
 That is why the gate waits for the sidecar rather than for a busy verdict: this adapter arms its busy contract at spawn, so the seeded `busy/fm-spawn` record would read busy before devin had even started.
 The spawn clears the sidecar beside the per-task config it composes, before the launch, because that proof is only worth anything for THIS incarnation: a spawn whose gate expired just as its predecessor's `SessionStart` landed leaves the file behind, and a plain re-dispatch of the same task id retires no wiring.
 
+A gate failure closes the endpoint the spawn launched, so a half-started worker never runs outside task control, but a relaunch is the exception: it adopts the task's recorded endpoint, and closing that one strands the task behind a record naming a window that is gone.
+Observed live when devin's cloud handshake outran the gate on a relaunch and the failure path took the task's only endpoint with it; [`docs/agent-control.md`](../agent-control.md) owns the resulting contract, and `tests/fm-control-relaunch.test.sh` pins the adopted endpoint surviving a gate timeout and the retry reaching the same gate again.
+
 `--respect-workspace-trust false` also suppresses the check, and unlike gemini's `--skip-trust` it leaves project configuration loaded - all four hooks from a project `.devin/hooks.v1.json` fired under it in an untrusted directory.
 The adapter still does not use it: an explicit per-worktree grant is auditable where a blanket per-launch bypass is not.
 Like claude's and agy's, the entries the spawn writes are not pruned at teardown.

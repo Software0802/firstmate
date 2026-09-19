@@ -38,7 +38,7 @@ A trusted directory covers its subdirectories.
 The post-launch readiness gate is the backstop: it answers a dialog that renders anyway with a single Enter, then requires the `state/<id>.devin-session` sidecar devin's own `SessionStart` hook writes.
 That sidecar, not a busy verdict, is the proof, because this adapter ARMS its busy contract at spawn and the seeded record would read busy before devin had even started.
 The spawn clears that sidecar before launching, so a file left by a previous incarnation of the same task id can never answer the gate for a pane that is still on the dialog.
-A pane whose session cannot be confirmed fails the spawn, records the failure in the task status, and closes the endpoint.
+A pane whose session cannot be confirmed fails the spawn, records the failure in the task status, and closes the endpoint the spawn launched; a relaunch adopts the task's existing endpoint instead, so that one is left open for a retry (`../../../../../docs/agent-control.md`).
 Never steer into a pane still showing the dialog; a spawn that reported success has already cleared it.
 
 ## Credential precondition
