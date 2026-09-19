@@ -15,9 +15,11 @@
 #   5. Lifecycle states: busy interrupts first, idle does not, already-stopped
 #      is idempotent success, and an agent that does not stop fails closed.
 #      A delivered interrupt closes the busy record of an adapter whose own
-#      lifecycle fires nothing on a cancelled turn, and never overwrites one
-#      that closes its own - from the exit verb's embedded interrupt too, even
-#      when the exit that follows it fails.
+#      lifecycle fires nothing on a cancelled turn - but only once that turn's
+#      in-flight token has cleared from the pane, never over a turn still
+#      rendering it or a pane too blank to read - and never overwrites an
+#      adapter that closes its own record, from the exit verb's embedded
+#      interrupt too, even when the exit that follows it fails.
 #   6. Marker non-regression: a control command to a kind=secondmate task
 #      carries NO from-firstmate marker and opens no pending-reply expectation,
 #      while fm-send's marking of the same task is untouched.
@@ -724,24 +726,59 @@ busy_verdict_for() {  # <case-dir> <harness>
   fm_busy_classify tmux fmses:fm-t1 "$2" t1 "$1/home/state" ''
 }
 
+# The rendered pane each adapter leaves once its turn really stopped, and the
+# one it keeps rendering while a turn is still in flight. Both are the live
+# surfaces recorded in docs/verification: the in-flight one carries the
+# harness's own interrupt token, which is what the control plane watches for.
+settled_pane() {  # <harness>
+  case "$1" in
+    devin) printf '%s\n' \
+      ' ✗ Canceled due to user interrupt' \
+      ' ✱ Canceled. What should Devin do?' \
+      '───────────────────────────────── (bypass permissions on) ─' \
+      '❭ Ask Devin to build features, fix bugs, or work on your code' ;;
+    *) printf '%s\n' \
+      '⎿  Interrupted by user' \
+      '╭────╮' \
+      '│    │' \
+      '╰────╯' ;;
+  esac
+}
+
+in_flight_pane() {  # <harness>
+  case "$1" in
+    devin) printf '%s\n' \
+      '⢠⡀ Running tools · 5s (esc twice to interrupt)' \
+      '───────────────────────────────── (bypass permissions on) ─' \
+      '❭ Guide Devin while it works' ;;
+    *) printf '%s\n' \
+      '✳ Thinking… (12s · esc to interrupt)' \
+      '╭────╮' \
+      '│    │' \
+      '╰────╯' ;;
+  esac
+}
+
 # The cancellation CLAIM and the busy RECORD are separate axes. Neither claude
 # nor devin acknowledges a manual interrupt, so both report cancel=unconfirmed
 # - but neither fires anything of its own on a cancelled turn either, so the
 # plane that delivered the interrupt must close their record or an abandoned
-# worker reads busy forever. The close records a delivered and verified key,
-# never a cancellation claim, which is why cancel stays unconfirmed here.
+# worker reads busy forever. The close records a delivered and verified key
+# whose turn was then observed out of flight, never a cancellation claim, which
+# is why cancel stays unconfirmed here.
 assert_interrupt_closes_the_record() {  # <harness> <busy-source>
   local harness=$1 source=$2 dir out rc verdict
   dir=$(new_case "unconfirmed-$harness")
   add_task "$dir" t1 "$harness"
   alive_as "$dir" "$harness"
+  settled_pane "$harness" > "$dir/fake/pane"
   open_turn "$dir" "$source" >/dev/null
   out=$(run_control "$dir" t1 interrupt); rc=$?
   expect_code 0 "$rc" "an interrupt without acknowledgement should still deliver on $harness"$'\n'"$out"
   verdict=$(busy_verdict_for "$dir" "$harness")
   [ "$verdict" = "idle fm-interrupt" ] \
     || fail "$harness fires nothing on a cancelled turn, so the interrupt must close its record, got '$verdict'"
-  assert_contains "$out" "verified=agent-alive cancel=unconfirmed" \
+  assert_contains "$out" "verified=agent-alive cancel=unconfirmed busy-record=closed" \
     "the result should distinguish delivery proof from unconfirmed cancellation"
   assert_not_contains "$out" "cancel=confirmed" \
     "an adapter without acknowledgement must not report cancellation"
@@ -751,6 +788,53 @@ test_interrupt_closes_a_record_no_adapter_hook_will_close() {
   assert_interrupt_closes_the_record claude claude-hook
   assert_interrupt_closes_the_record devin devin-hook
   pass "fm-control interrupt: a record no adapter hook will ever close is closed here"
+}
+
+# Delivery is not cancellation for an adapter that acknowledges nothing: a
+# devin press that misses the prompt window is absorbed and the turn carries
+# on, with both keys reported delivered and the agent still alive. Recording
+# idle there would tell every supervisor, Herdr included, that a working worker
+# was free - the one direction the close is forbidden to take - so the record
+# is left exactly as the adapter wrote it.
+assert_running_turn_stays_recorded_busy() {  # <harness> <busy-source>
+  local harness=$1 source=$2 dir out rc verdict
+  dir=$(new_case "still-running-$harness")
+  add_task "$dir" t1 "$harness"
+  alive_as "$dir" "$harness"
+  in_flight_pane "$harness" > "$dir/fake/pane"
+  open_turn "$dir" "$source" >/dev/null
+  out=$(run_control "$dir" t1 interrupt); rc=$?
+  expect_code 0 "$rc" "delivery on $harness should still succeed"$'\n'"$out"
+  verdict=$(busy_verdict_for "$dir" "$harness")
+  [ "$verdict" = "busy $source" ] \
+    || fail "$harness's turn is still in flight, so its record must not be closed, got '$verdict'"
+  assert_contains "$out" "busy-record=left-busy" \
+    "the result should say the record was left busy rather than imply an idle worker"
+}
+
+test_interrupt_never_records_idle_for_a_turn_still_in_flight() {
+  assert_running_turn_stays_recorded_busy claude claude-hook
+  assert_running_turn_stays_recorded_busy devin devin-hook
+  pass "fm-control interrupt: a turn still rendering its interrupt token stays busy"
+}
+
+# devin blanks its pane while it repaints, so a blank frame is the absence of
+# evidence rather than evidence of a stopped turn.
+test_interrupt_does_not_read_a_blank_pane_as_a_stopped_turn() {
+  local dir out rc verdict
+  dir=$(new_case blank-frame)
+  add_task "$dir" t1 devin
+  alive_as "$dir" devin
+  printf '\n\n\n' > "$dir/fake/pane"
+  open_turn "$dir" devin-hook >/dev/null
+  out=$(run_control "$dir" t1 interrupt); rc=$?
+  expect_code 0 "$rc" "delivery should still succeed against an unpainted pane"$'\n'"$out"
+  verdict=$(busy_verdict_for "$dir" devin)
+  [ "$verdict" = "busy devin-hook" ] \
+    || fail "a blank repaint frame proves nothing, so the record must stand, got '$verdict'"
+  assert_contains "$out" "busy-record=left-busy" \
+    "an unreadable surface should be reported as a record left busy"
+  pass "fm-control interrupt: a blank repaint frame is not proof a turn stopped"
 }
 
 test_interrupt_preserves_a_self_closing_adapters_record() {
@@ -842,7 +926,7 @@ test_agent_that_does_not_stop_fails_closed() {
     "$CONTROL" t1 exit 2>&1); rc=$?
   expect_code 1 "$rc" "an agent that ignores its exit command should fail closed"
   assert_contains "$out" "did not stop" "the failure should say the agent did not stop"
-  assert_contains "$out" "exit-delivered t1 interrupt=delivered verified=agent-alive cancel=unconfirmed exit-command=delivered agent-state=alive exit=unconfirmed" \
+  assert_contains "$out" "exit-delivered t1 interrupt=delivered verified=agent-alive cancel=unconfirmed busy-record=closed exit-command=delivered agent-state=alive exit=unconfirmed" \
     "the failure should distinguish delivered lifecycle input from the unconfirmed exit"
   assert_not_contains "$out" "nothing was changed" \
     "the failure must not deny the lifecycle input that was delivered"
@@ -973,6 +1057,8 @@ test_ambiguous_endpoint_refuses
 test_busy_agent_is_interrupted_before_the_exit_command
 test_idle_agent_is_not_interrupted
 test_interrupt_closes_a_record_no_adapter_hook_will_close
+test_interrupt_never_records_idle_for_a_turn_still_in_flight
+test_interrupt_does_not_read_a_blank_pane_as_a_stopped_turn
 test_interrupt_preserves_a_self_closing_adapters_record
 test_muse_interrupt_confirms_adapter_acknowledgement
 test_interrupt_revalidates_agent_after_acknowledgement_wait

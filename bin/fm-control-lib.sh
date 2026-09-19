@@ -207,6 +207,12 @@ fm_control_interrupt_ack_source() {  # <harness>
 # there would overwrite adapter-owned truth. Anything unlisted answers no,
 # because never forging an event is the safe default for an adapter whose
 # cancel behaviour has not been measured.
+# Neither listed adapter acknowledges the cancellation either
+# (fm_control_interrupt_ack_source is `none` for both), so delivery alone never
+# proves the turn ended: a harness listed here must also carry a verified
+# in-flight signature in bin/fm-composer-lib.sh, which is the evidence
+# bin/fm-control.sh requires to have cleared from the pane before it closes the
+# record.
 fm_control_interrupt_needs_record_close() {  # <harness>
   case "${1-}" in
     claude|devin) return 0 ;;

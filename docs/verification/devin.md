@@ -212,6 +212,11 @@ Sent back to back, the pair cancels:
 
 The composer returns to its idle placeholder with no repollution, so no clear key follows.
 
+The absorbed-press case is exactly why the control plane does not treat delivery as cancellation.
+devin acknowledges nothing for a manual interrupt, so `bin/fm-control.sh` closes the busy record only after the `esc twice|again to interrupt` token has cleared from the VISIBLE pane within the settle bound.
+The viewport is read rather than scrollback, because the finished turn's status row survives in history, and a blank frame is polled past rather than read as a cleared token, because devin blanks its pane while it repaints.
+When the token is still rendered the turn is still running, so the record is left busy and the verb reports `busy-record=left-busy`; recording idle there would tell every supervisor a working worker was free.
+
 ## End-to-end through the real spawn
 
 One scout task in an isolated `FM_HOME` on tmux, against the real binary and a real treehouse worktree:
