@@ -246,7 +246,8 @@ $ bin/fm-teardown.sh devin-smoke-1
 teardown devin-smoke-1 complete (window firstmate:fm-devin-smoke-1, worktree ...)
 ```
 
-The interrupt left the busy record untouched, as the missing `Stop` hook requires.
+That interrupt left the busy record untouched, because the smoke ran before the control plane took over closing it.
+Both verbs now write `idle`/`fm-interrupt` themselves once the full sequence is delivered and verified, the contract the hook-lifecycle section above owns.
 The relaunch minted a fresh busy generation (`g1789817836.505320.12981`) and a fresh devin session id (`dour-rain`, replacing `flashy-bath`), proving the wiring is re-armed rather than adopted.
 Teardown left `state/` holding none of the task's files, including the per-task config and the session sidecar.
 
