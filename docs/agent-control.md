@@ -42,7 +42,9 @@ Key delivery alone is not that observation: one Escape only rewrites Devin's sta
 Scrollback is deliberately not read, because a finished turn's status row survives there, and a blank frame is polled past rather than taken as a cleared token, because Devin blanks its pane while it repaints.
 When that evidence does not arrive - the token is still rendered, or the backend has no viewport-bounded capture at all - the record is left exactly as the adapter wrote it and the result reports `busy-record=left-busy`.
 A stale busy is the safe direction: it is conservative, while a false idle makes every supervisor act on a worker that never stopped.
-`bin/fm-control-lib.sh` owns which adapters that applies to, so the exit verb's own interrupt and `bin/fm-send.sh`'s Escape path reach the same answer rather than keeping a second copy of it.
+`bin/fm-control-lib.sh` owns which adapters that applies to, so the exit verb's own interrupt reaches the same answer rather than keeping a second copy of it.
+That answer is a permission and not an instruction: it may only be acted on by a caller that has positively observed the turn out of flight, which is why these two verbs are its only callers.
+`bin/fm-send.sh`'s Escape path delivers the same keys and reads no pane, so it writes no busy record at all and leaves a conservative stale busy rather than a guessed idle.
 muse's session log records `terminal=cancelled` for the interrupted run, so the control plane reports `cancel=confirmed` only after observing that exact acknowledgement.
 
 An interrupt is not complete until the composer is empty.

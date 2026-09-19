@@ -213,6 +213,14 @@ fm_control_interrupt_ack_source() {  # <harness>
 # in-flight signature in bin/fm-composer-lib.sh, which is the evidence
 # bin/fm-control.sh requires to have cleared from the pane before it closes the
 # record.
+# This answer is a PERMISSION, never an instruction, and it is inseparable from
+# that evidence: a yes means the record MAY be closed by a caller that has
+# positively observed the turn out of flight, and nothing else. A caller that
+# cannot read the pane - bin/fm-send.sh's Escape path, any remote target -
+# must leave the record alone, because a guessed idle makes every supervisor
+# act on a worker that never stopped while a stale busy is merely conservative.
+# bin/fm-control.sh's interrupt and exit verbs are the only callers for that
+# reason.
 fm_control_interrupt_needs_record_close() {  # <harness>
   case "${1-}" in
     claude|devin) return 0 ;;

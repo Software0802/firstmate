@@ -4009,12 +4009,13 @@ if [ "$KIND" != secondmate ]; then
     # a turn; Stop (normal completion), StopFailure (API-error turn end),
     # and SessionEnd (process shutdown) all close it, so an abnormal end can
     # never leave a stale busy record. Claude fires no hook for a manual
-    # interrupt, so the plane that delivered it closes the record instead:
+    # interrupt, so the control plane closes the record instead:
     # bin/fm-control.sh's interrupt and exit verbs write idle/fm-interrupt once
     # the sequence is delivered, verified, and claude's own in-flight token
     # observed cleared from the pane - they leave the record busy and report
-    # busy-record=left-busy rather than call a running turn idle - and
-    # bin/fm-send.sh's --key Escape path writes it on delivery alone. Stop keeps
+    # busy-record=left-busy rather than call a running turn idle. No other
+    # plane writes that edge: bin/fm-send.sh's --key Escape path delivers the
+    # same key but reads no pane, so it records nothing. Stop keeps
     # the turn-ended NOTIFICATION touch for the watcher. Every
     # hook command tolerates a refused event (|| true) so a stale-gen writer
     # can never break Claude's own lifecycle.
@@ -4077,13 +4078,13 @@ EOF
       # pane: SessionStart once, UserPromptSubmit once per prompt, Stop once per
       # COMPLETED turn, SessionEnd once on /exit with reason prompt_input_exit.
       # devin fires NO hook for a manual interrupt - the same gap claude has, and
-      # unlike gemini - so the plane that delivered the interrupt closes the
+      # unlike gemini - so the control plane closes the
       # record itself: bin/fm-control.sh's interrupt and exit verbs write
       # idle/fm-interrupt once the sequence is delivered, verified, and devin's
       # own esc-twice token observed cleared from the pane - an absorbed press
       # leaves the record busy and reports busy-record=left-busy rather than
-      # call a running turn idle - and
-      # bin/fm-send.sh's --key Escape path does so on delivery, or a cancelled turn
+      # call a running turn idle, and bin/fm-send.sh's --key Escape path reads
+      # no pane so it records nothing at all. Without that close a cancelled turn
       # would read busy to every supervisor until some later turn's Stop closed
       # it - which for an abandoned worker never comes. Stop keeps the
       # turn-ended NOTIFICATION touch for the watcher.

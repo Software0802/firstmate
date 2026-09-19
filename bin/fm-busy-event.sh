@@ -19,8 +19,8 @@
 #       sidecar, advance seq under the lock, atomically replace the record.
 #       Adapter wiring passes the exact --gen embedded at arm time, so a
 #       hook that outlives its incarnation fails closed here. The manual
-#       interrupt paths (fm-interrupt: bin/fm-control.sh's interrupt and exit
-#       verbs, and bin/fm-send.sh's --key Escape) and firstmate recovery
+#       interrupt path (fm-interrupt: bin/fm-control.sh's interrupt and exit
+#       verbs, the only plane that observes the turn stop) and firstmate recovery
 #       paths (fm-recovery) may pass --current-gen to bind to the incarnation
 #       armed right now.
 #

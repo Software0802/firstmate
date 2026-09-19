@@ -300,8 +300,9 @@ fm_send_normalize_key() { # <key>
 # remaining presses are delivered here back to back the way that verb delivers
 # them: a devin press that arrived seconds later was absorbed and the turn
 # carried on. A harness with no verified repeat count keeps the single press it
-# has always had. This must land BEFORE the record is closed, or an armed but
-# still running turn would be reported idle.
+# has always had. Delivering the full sequence is all this plane can do about a
+# turn: whether that sequence actually cancelled it is unobservable from here,
+# which is why no busy record is written below.
 fm_send_deliver_interrupt_repeats() { # <key>
   local key=$1 family repeat i=1
   [ "$key" = Escape ] || return 0
@@ -318,33 +319,15 @@ fm_send_deliver_interrupt_repeats() { # <key>
   done
 }
 
-# fm_send_record_interrupt: WHICH adapters leave their busy record open after a
-# delivered interrupt is the control plane's table to own
-# (bin/fm-control-lib.sh), the same one bin/fm-control.sh's interrupt verb reads
-# to close the record there, rather than a second copy of that judgement here.
-# fm-interrupt is a firstmate-owned source every converted adapter accepts
-# (bin/fm-busy-lib.sh). This runs only after the adapter's FULL interrupt
-# sequence landed, so it can never report idle for a running turn.
-fm_send_record_interrupt() { # <key>
-  local key=$1 id gen family
-  [ "$key" = Escape ] || return 0
-  family=$(fm_control_harness_family "$TARGET_HARNESS") || return 0
-  fm_control_interrupt_needs_record_close "$family" || return 0
-  [ -n "$TARGET_META" ] || return 0
-  id=$(fm_send_id_from_meta "$TARGET_META")
-  [ -f "$STATE/$id.busy-gen" ] || return 0
-  gen=$(fm_meta_get "$TARGET_META" busy_gen)
-  if [ -n "$gen" ]; then
-    "$FM_ROOT/bin/fm-busy-event.sh" apply "$STATE" "$id" idle \
-      --gen "$gen" --source fm-interrupt --event interrupt
-  else
-    "$FM_ROOT/bin/fm-busy-event.sh" apply "$STATE" "$id" idle \
-      --current-gen --source fm-interrupt --event interrupt
-  fi || {
-    echo "error: key '$key' reached $T, but the $TARGET_HARNESS interrupt state could not be recorded for $id" >&2
-    return 1
-  }
-}
+# This plane deliberately writes NO busy record for the Escape it just
+# delivered. The adapters that fire nothing of their own on a cancelled turn
+# (bin/fm-control-lib.sh names them) may only have their record closed on
+# positive evidence that the turn actually stopped, and this plane captures
+# nothing: it cannot tell a cancelled turn from an absorbed press, so any write
+# here would be a guess, and a guessed idle makes every supervisor act on a
+# worker that is still running. Leaving the record busy is the conservative
+# outcome, and bin/fm-control.sh's interrupt and exit verbs - the only
+# sanctioned lifecycle path, which does read the pane - close it properly.
 
 fm_send_meta_for_key_value() { # <state-dir> <key> <value>
   local state=$1 key=$2 value=$3 meta got
@@ -786,7 +769,6 @@ if [ "${1:-}" = "--key" ]; then
   fi
   fm_send_deliver_interrupt_repeats "$semantic_key" || exit 1
   fm_send_clear_after_interrupt "$semantic_key" || exit 1
-  fm_send_record_interrupt "$semantic_key" || exit 1
 else
   MESSAGE=$*
   if [ -z "${MESSAGE//[[:space:]]/}" ]; then

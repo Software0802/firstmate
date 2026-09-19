@@ -133,15 +133,16 @@ test_key_path_never_pauses() {
   pass "fm-send: the --key path never pauses (settle scoped to text submit)"
 }
 
-# An adapter whose own wiring fires nothing on a manual interrupt needs this
-# plane to close the record, or a cancelled turn reads busy to every supervisor
-# until some later turn ends. claude and devin are both such adapters, but they
-# need a DIFFERENT number of presses to cancel at all: one for claude, two for
-# devin, which the control-plane table owns. The record may only be closed once
-# the adapter's full sequence is on the wire, or a still running devin turn -
-# one Escape only ARMS the second press - would be reported idle.
-assert_escape_interrupts_and_records_idle() {  # <harness> <expected-presses>
-  local harness=$1 want=$2 dir fb log keys rc home gen out got
+# An Escape on this plane IS the interrupt, and the adapters need a DIFFERENT
+# number of presses to cancel at all: one for claude, two for devin, which the
+# control-plane table owns. What this plane must NOT do is record the outcome:
+# it captures nothing, so it cannot tell a cancelled turn from an absorbed
+# press - the case devin's own status row is built around, since one Escape
+# merely ARMS the second - and a guessed idle would tell every supervisor a
+# working worker was free. The record is left exactly as the adapter wrote it;
+# bin/fm-control.sh's interrupt verb, which does read the pane, owns the close.
+assert_escape_delivers_the_sequence_and_records_nothing() {  # <harness> <source> <expected-presses>
+  local harness=$1 source=$2 want=$3 dir fb log keys rc home gen out got
   dir="$TMP_ROOT/$harness-interrupt"; mkdir -p "$dir"
   fb=$(make_stubs "$dir"); log="$dir/sleep.log"; keys="$dir/keys.log"
   home="$dir/home"; mkdir -p "$home/state"
@@ -150,6 +151,9 @@ assert_escape_interrupts_and_records_idle() {  # <harness> <expected-presses>
     "harness=$harness" "kind=ship" "mode=no-mistakes" "yolo=off"
   gen=$("$ROOT/bin/fm-busy-event.sh" arm "$home/state" task)
   printf 'busy_gen=%s\n' "$gen" >> "$home/state/task.meta"
+  "$ROOT/bin/fm-busy-event.sh" apply "$home/state" task busy \
+    --gen "$gen" --source "$source" --event turn-open >/dev/null \
+    || fail "could not open a $harness turn from source $source"
   : > "$log"
   : > "$keys"
 
@@ -160,18 +164,18 @@ assert_escape_interrupts_and_records_idle() {  # <harness> <expected-presses>
   [ "$got" = "$want" ] \
     || fail "$harness interrupts on $want Escape press(es), but the plane delivered $got"
   out=$(fm_busy_classify tmux sess:win "$harness" task "$home/state")
-  [ "$out" = "idle fm-interrupt" ] \
-    || fail "$harness Escape must classify idle/fm-interrupt, got '$out'"
+  [ "$out" = "busy $source" ] \
+    || fail "$harness's record is the adapter's to own on this plane, got '$out'"
 }
 
-test_escape_delivers_the_verified_sequence_and_records_idle() {
-  assert_escape_interrupts_and_records_idle claude 1
-  assert_escape_interrupts_and_records_idle devin 2
-  pass "fm-send: Escape delivers each adapter's verified interrupt sequence, then records the lifecycle edge"
+test_escape_delivers_the_verified_sequence_and_records_nothing() {
+  assert_escape_delivers_the_sequence_and_records_nothing claude claude-hook 1
+  assert_escape_delivers_the_sequence_and_records_nothing devin devin-hook 2
+  pass "fm-send: Escape delivers each adapter's verified interrupt sequence and records no outcome"
 }
 
 test_default_send_pauses_one_second
 test_zero_disables_pause
 test_pause_is_tunable
 test_key_path_never_pauses
-test_escape_delivers_the_verified_sequence_and_records_idle
+test_escape_delivers_the_verified_sequence_and_records_nothing

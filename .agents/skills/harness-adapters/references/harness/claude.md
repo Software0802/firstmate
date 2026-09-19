@@ -6,7 +6,7 @@ Busy hooks verified 2026-07-28 on Claude Code 2.1.220.
 
 | Fact | Value |
 |---|---|
-| Busy | Owned hooks: `UserPromptSubmit` opens while `Stop`, `StopFailure`, and `SessionEnd` close; manual interrupt emits no hook, so control reports delivered keys and live endpoint only and makes no cancellation claim, and the plane that delivered the interrupt closes the record itself with `idle`/`fm-interrupt` once the sequence is delivered, verified, and claude's own `esc to interrupt` token observed cleared from the visible pane, so no worker is left recorded busy at an idle composer and none is recorded idle mid-turn; without that observation, or on a backend with no viewport-bounded capture, the record is left busy and the verb reports `busy-record=left-busy`; `../../../docs/agent-control.md` owns that contract. |
+| Busy | Owned hooks: `UserPromptSubmit` opens while `Stop`, `StopFailure`, and `SessionEnd` close; manual interrupt emits no hook, so control reports delivered keys and live endpoint only and makes no cancellation claim, and the control plane closes the record itself with `idle`/`fm-interrupt` once the sequence is delivered, verified, and claude's own `esc to interrupt` token observed cleared from the visible pane, so no worker is left recorded busy at an idle composer and none is recorded idle mid-turn; without that observation, or on a backend with no viewport-bounded capture, the record is left busy and the verb reports `busy-record=left-busy`; `../../../docs/agent-control.md` owns that contract. |
 | Exit | `/exit`. |
 | Interrupt | Single Escape. |
 | Skill | `/<skill>`, for example `/no-mistakes`. |
