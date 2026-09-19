@@ -338,6 +338,43 @@ test_devin_api_error_turn_is_not_busy_forever() {
   pass "fm-busy-lib: an API-error devin turn stops reporting busy, a live one does not"
 }
 
+# The corroboration belongs to the one record devin's hooks may fail to close.
+# The firstmate-owned records devin also trusts are written BEFORE devin has
+# been handed a prompt - bin/fm-spawn.sh seeds the launch-brief turn as soon as
+# the session sidecar appears, and an fm-recovery reset does the same after a
+# relaunch - so devin is still rendering its idle composer then, and reading it
+# as a contradiction would discard the exact record that window exists to cover.
+test_devin_idle_composer_never_contradicts_the_seed_record() {
+  local statedir gen idle_pane got
+  statedir="$TMP_ROOT/seed-record"; mkdir -p "$statedir"
+  # The pane during the spawn window: devin is up and idle at its composer,
+  # with no status row, because the brief has not been submitted yet.
+  idle_pane=$(printf '%s\n' \
+    '───────────────────────────────────── (bypass permissions on) ─' \
+    '❭ Ask Devin to build features, fix bugs, or work on your code' \
+    '───────────────────────────────────────────────────────────────' \
+    'Kimi K3 Max                           See all keyboard shortcuts: /shortcuts')
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$statedir" devin-seed-1) \
+    || fail "could not arm a devin busy incarnation"
+  got=$(fm_busy_classify tmux fake:win devin devin-seed-1 "$statedir" "$idle_pane")
+  [ "$got" = "busy fm-spawn" ] \
+    || fail "the launch-brief seed must survive devin's idle composer, got '$got'"
+  "$ROOT/bin/fm-busy-event.sh" apply "$statedir" devin-seed-1 busy \
+    --gen "$gen" --source fm-recovery --event reset >/dev/null \
+    || fail "an fm-recovery reset must be accepted"
+  got=$(fm_busy_classify tmux fake:win devin devin-seed-1 "$statedir" "$idle_pane")
+  [ "$got" = "busy fm-recovery" ] \
+    || fail "a recovery reset must survive devin's idle composer, got '$got'"
+  # The record whose closer really can be missing is still corroborated.
+  "$ROOT/bin/fm-busy-event.sh" apply "$statedir" devin-seed-1 busy \
+    --gen "$gen" --source devin-hook --event user-prompt-submit >/dev/null \
+    || fail "a devin UserPromptSubmit event must be accepted"
+  got=$(fm_busy_classify tmux fake:win devin devin-seed-1 "$statedir" "$idle_pane")
+  [ "$got" = "unknown devin-turn-contradicted" ] \
+    || fail "an open UserPromptSubmit turn must still be corroborated, got '$got'"
+  pass "fm-busy-lib: devin's corroboration reaches its hook's turn record alone"
+}
+
 test_devin_busy_signatures_are_harness_scoped() {
   printf '⢠⡀ Running tools · 5s (esc twice to interrupt)\n' | fm_busy_lines_match devin \
     || fail "harness=devin must match its own esc-twice token"
@@ -920,6 +957,7 @@ test_devin_relaunch_retires_its_own_wiring
 test_devin_busy_source_is_trusted_only_for_devin
 test_devin_classify_reads_its_hook_record
 test_devin_api_error_turn_is_not_busy_forever
+test_devin_idle_composer_never_contradicts_the_seed_record
 test_devin_busy_signatures_are_harness_scoped
 test_devin_idle_composer_is_empty_without_truecolor
 test_devin_tmux_names_the_native_binary_an_agent

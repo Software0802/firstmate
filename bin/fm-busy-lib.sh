@@ -37,8 +37,10 @@
 #   devin-hook       Devin CLI lifecycle hooks (UserPromptSubmit opens; Stop
 #                    and SessionEnd close). devin's hook vocabulary has no
 #                    StopFailure equivalent, so a turn that dies on an API
-#                    error closes nothing; an open devin record is therefore
-#                    corroborated at read time (see devin-turn-contradicted)
+#                    error closes nothing; a devin-hook record left open by
+#                    its UserPromptSubmit is therefore corroborated at read
+#                    time (see devin-turn-contradicted). Only that record is:
+#                    the firstmate-owned sources below close themselves
 #   codex-hook, codex-appserver  reserved: Codex, gated by
 #                    fm_busy_codex_semantic_source
 #   kimi-wire, kimi-hook  reserved: standalone Kimi, gated by fm_busy_kimi_verified
@@ -79,11 +81,13 @@
 # recorded worker state source.
 #
 # devin is the one adapter whose rendered surface is read alongside a record,
-# and it still classifies nothing: it can only CONTRADICT an open turn record
-# into unknown, never produce busy and never produce idle. That narrow role
-# exists because devin's hooks cannot close a turn that died on an API error,
-# so its record alone can assert busy forever. See
-# fm_busy_devin_turn_contradicted for the two signals it requires.
+# and it still classifies nothing: it can only CONTRADICT a devin-hook turn
+# record opened by UserPromptSubmit into unknown, never produce busy and never
+# produce idle. That narrow role exists because devin's hooks cannot close a
+# turn that died on an API error, so that record alone can assert busy
+# forever; the firstmate-owned records devin also trusts have their own
+# closers and are never corroborated. See fm_busy_devin_turn_contradicted for
+# the two signals it requires.
 #
 # The muse pull source is semantic, not rendered: it folds muse's own durable
 # session event log. It has no writer, no arm, and no gen, because
@@ -886,9 +890,10 @@ fm_busy_agy_tail_busy() {
     | grep -qiE 'esc[[:space:]]+to[[:space:]]+cancel'
 }
 
-# fm_busy_devin_turn_contradicted: the devin-only read-side corroboration of an
-# OPEN turn record. Consumes the tail on stdin; 0 only when devin's own
-# rendered surface positively proves the pane is NOT in a turn.
+# fm_busy_devin_turn_contradicted: the devin-only read-side corroboration of a
+# turn record devin's own UserPromptSubmit left OPEN. Consumes the tail on
+# stdin; 0 only when devin's own rendered surface positively proves the pane is
+# NOT in a turn.
 #
 # Why devin needs one at all: its hook vocabulary on 3000.10.31 is
 # PreToolUse, PostToolUse, PostCompaction, SessionStart, SessionEnd,
@@ -940,7 +945,7 @@ fm_busy_devin_turn_contradicted() {
 # contradict a record that already answered.
 fm_busy_classify() {  # <backend> <target> <harness> <id> <state-dir> [tail40]
   local backend=$1 target=$2 harness=$3 id=$4 state=$5 tail40=${6-}
-  local out rc r_state r_source native log
+  local out rc r_state r_source r_event native log
   case "$harness" in
     kimi*)
       if ! fm_busy_kimi_verified; then
@@ -978,14 +983,23 @@ fm_busy_classify() {  # <backend> <target> <harness> <id> <state-dir> [tail40]
     r_state=${out%% *}
     out=${out#* }
     r_source=${out%% *}
+    out=${out#* }
+    r_event=${out%% *}
     if fm_busy_source_trusted "$harness" "$r_source"; then
-      # devin alone: an OPEN turn record its own hooks may never be able to
-      # close (no StopFailure equivalent exists, so an API-error turn end
-      # fires nothing) is corroborated against devin's rendered surface, and
-      # a positive contradiction downgrades it to unknown - never to idle.
-      # See fm_busy_devin_turn_contradicted. Absent or unreadable evidence
-      # leaves the record's own verdict standing.
-      if [ "$r_state" = busy ] && [ "$harness" = devin ]; then
+      # devin's UserPromptSubmit record alone: the one open record devin's own
+      # hooks may never be able to close (no StopFailure equivalent exists, so
+      # an API-error turn end fires nothing) is corroborated against devin's
+      # rendered surface, and a positive contradiction downgrades it to
+      # unknown - never to idle. See fm_busy_devin_turn_contradicted. Absent
+      # or unreadable evidence leaves the record's own verdict standing.
+      # The firstmate-owned busy record devin also trusts - the launch-brief
+      # turn bin/fm-spawn.sh seeds, and an fm-recovery reset - is deliberately
+      # NOT corroborated: it is written before devin has been handed the
+      # prompt, so devin still renders its idle composer and the corroboration
+      # would contradict a healthy worker whose brief is about to run.
+      if [ "$r_state" = busy ] \
+         && [ "$r_source" = devin-hook ] \
+         && [ "$r_event" = user-prompt-submit ]; then
         if [ -z "$tail40" ] && command -v fm_backend_capture >/dev/null 2>&1; then
           tail40=$(fm_backend_capture "$backend" "$target" 40 2>/dev/null) || tail40=''
         fi
