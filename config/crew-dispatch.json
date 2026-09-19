@@ -1,0 +1,78 @@
+{
+  "rules": [
+    {
+      "when": "The task is documentation or descriptive writing: README, AGENTS/CLAUDE prose, product copy, user-facing docs, changelog narrative, handoff narrative, or explainers — not implementation and not UI pixel work.",
+      "use": { "harness": "agy", "model": "gemini-3.8-flash-high" },
+      "why": "Captain: docs via agy + gemini-3.8-flash-high. Model id already encodes high/medium/low; do not also pass --effort (conflicts)."
+    },
+    {
+      "when": "The task is to challenge, stress-test, red-team, critique, or review a plan or design produced by Fable (or any planning doc): adversarial review of architecture/UI plans, holes, alternates, risk lists — using the thin Codex/GPT path.",
+      "use": { "harness": "codex", "model": "gpt-6-astra", "effort": "medium" },
+      "why": "Captain: Codex GPT-6-Astra medium is for reviewing Fable plans — not for primary coding. Thin Plus quota must not be spent on everyday implementation."
+    },
+    {
+      "when": "The task is a second or heavier plan critique, deep fork analysis, or broad investigation that should use Cursor Grok rather than thin Codex.",
+      "use": { "harness": "cursor", "model": "cursor-grok-4.6-xhigh" },
+      "why": "Captain: everyday heavier thinking / long-context critique and investigation → Cursor Grok 4.6 xhigh."
+    },
+    {
+      "when": "The task is writing a plan, architecture/design thinking, or a final product decision document — and Claude Code Fable 5.1 usage is under 50% (or unknown).",
+      "use": { "harness": "claude", "model": "fable", "effort": "medium" },
+      "why": "Captain: plan authoring with Fable 5.1 medium while under 50%. After plan, Codex gpt-6-astra medium may review the plan."
+    },
+    {
+      "when": "The task is writing a plan, architecture/design thinking, or a final product decision — and Claude Code Fable 5.1 usage is at or above 50%.",
+      "approval": "captain",
+      "use": { "harness": "claude", "model": "fable", "effort": "medium" },
+      "why": "Captain: plan authoring at >=50% Fable → prefer Devin Fusion (Fable medium + SW2 medium). Ask captain. Not the UI path."
+    },
+    {
+      "when": "The task is primarily UI, system UI, visual design, layout, interaction polish, or frontend styling (default in-fleet UI path).",
+      "use": { "harness": "cursor", "model": "kimi-k3-max[context=20k]" },
+      "why": "Captain: UI priority 1 = Cursor Kimi K3 max with ~20k context (not 1M). Reasoning max is in the model id."
+    },
+    {
+      "when": "The task is primarily UI/visual work and Cursor Kimi K3 is unavailable, exhausted, or the captain asks for Fable UI instead.",
+      "use": { "harness": "claude", "model": "fable", "effort": "medium" },
+      "why": "Captain: UI priority 2 = Claude Fable 5.1 medium."
+    },
+    {
+      "when": "The task is primarily UI/visual work and should use Devin Kimi K3 (Cursor/Fable unfit or captain names Devin UI).",
+      "approval": "captain",
+      "use": { "harness": "cursor", "model": "kimi-k3-max[context=20k]" },
+      "why": "Captain: UI priority 3 = Devin Kimi K3 max. External — ask captain. Placeholder stays Cursor Kimi only if captain forces in-fleet."
+    },
+    {
+      "when": "The task is coding, implementation, bug fix, tests, refactor, feature work, or careful code review of code (not Fable plan review).",
+      "use": { "harness": "claude", "model": "opus", "effort": "max" },
+      "why": "Captain: Claude Opus max owns almost all coding — quota is plentiful. Do not use Codex for coding."
+    },
+    {
+      "when": "The task is a large multi-file feature, heavy investigation, long-context codebase exploration, or everyday heavy non-UI work that fits Cursor better than a short Opus turn.",
+      "use": { "harness": "cursor", "model": "cursor-grok-4.6-xhigh" },
+      "why": "Captain: everyday heavier tasks → Cursor Grok 4.6 xhigh (not SW2 Max while TPS is poor)."
+    },
+    {
+      "when": "The task is deploy, release to production, ship to Aliyun ECS, or production server ops.",
+      "approval": "captain",
+      "use": { "harness": "claude", "model": "opus", "effort": "low" },
+      "why": "Deploy remains Devin SW2 Max + aliyun-ecs when captain authorizes; SW2 Max currently low TPS — minimize non-essential Devin work; still no in-fleet SSH."
+    },
+    {
+      "when": "The task is explicitly a Devin SW2 Max speed test or the captain names SW2 Max despite low TPS.",
+      "approval": "captain",
+      "use": { "harness": "claude", "model": "opus", "effort": "low" },
+      "why": "SW2 Max is external and currently slow; only run when captain wants a timed trial or insists. Otherwise avoid heavy SW2 Max load."
+    },
+    {
+      "when": "The task is a trivial mechanical edit such as a tiny typo, one-line config, or rote rename.",
+      "use": { "harness": "claude", "model": "opus", "effort": "low" },
+      "why": "Tiny edits on Opus low — do not burn Codex."
+    }
+  ],
+  "default": {
+    "harness": "claude",
+    "model": "opus",
+    "effort": "max"
+  }
+}
