@@ -318,20 +318,18 @@ fm_send_deliver_interrupt_repeats() { # <key>
   done
 }
 
-# fm_send_record_interrupt: the adapters whose own wiring fires NOTHING on a
-# manual interrupt need this plane to close the busy record, or a cancelled
-# turn reads busy to every supervisor until some later turn ends.
-# claude has always been one; devin is the other (verified live, devin
-# 3000.10.31: its Stop hook does not fire on an interrupt). Every other
-# converted adapter closes its own record - gemini's AfterAgent fires on a
-# cancelled turn - so forging an event for them would overwrite adapter-owned
-# truth. fm-interrupt is a firstmate-owned source every converted adapter
-# accepts (bin/fm-busy-lib.sh). This runs only after the adapter's FULL
-# interrupt sequence landed, so it can never report idle for a running turn.
+# fm_send_record_interrupt: WHICH adapters leave their busy record open after a
+# delivered interrupt is the control plane's table to own
+# (bin/fm-control-lib.sh), the same one bin/fm-control.sh's interrupt verb reads
+# to close the record there, rather than a second copy of that judgement here.
+# fm-interrupt is a firstmate-owned source every converted adapter accepts
+# (bin/fm-busy-lib.sh). This runs only after the adapter's FULL interrupt
+# sequence landed, so it can never report idle for a running turn.
 fm_send_record_interrupt() { # <key>
-  local key=$1 id gen
+  local key=$1 id gen family
   [ "$key" = Escape ] || return 0
-  case "$TARGET_HARNESS" in claude* | devin) : ;; *) return 0 ;; esac
+  family=$(fm_control_harness_family "$TARGET_HARNESS") || return 0
+  fm_control_interrupt_needs_record_close "$family" || return 0
   [ -n "$TARGET_META" ] || return 0
   id=$(fm_send_id_from_meta "$TARGET_META")
   [ -f "$STATE/$id.busy-gen" ] || return 0

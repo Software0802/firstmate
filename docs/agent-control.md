@@ -30,13 +30,15 @@ A recorded `harness=` is not always an exact adapter name: a task launched from 
 
 | Verb | Effect | Postcondition |
 | --- | --- | --- |
-| `interrupt` | Deliver the harness's verified interrupt sequence while leaving the agent running. | Delivery succeeds while the endpoint still exists and the agent is still alive where the backend can classify that; cancellation is confirmed only from an adapter-owned acknowledgement and otherwise reports `cancel=unconfirmed`. |
+| `interrupt` | Deliver the harness's verified interrupt sequence while leaving the agent running. | Delivery succeeds while the endpoint still exists and the agent is still alive where the backend can classify that; cancellation is confirmed only from an adapter-owned acknowledgement and otherwise reports `cancel=unconfirmed`; and no adapter is left recorded busy for a turn this verb cancelled. |
 | `exit` | Stop the agent, preserving the endpoint, the worktree, and every uncommitted change. | The backend's recovery-grade classifier reports the agent gone. Already-stopped is idempotent success. |
 | `relaunch` | Replace the running agent with a new one in the same endpoint and worktree, on the exact recorded adapter or an explicitly chosen harness, model, and effort. | The new agent is alive on the recorded endpoint, and the durable record names the harness that is actually running. |
 
 An exit that delivers lifecycle input but cannot prove the agent stopped fails with `exit=unconfirmed`, reports the observed agent state and any interrupt cancellation claim, and never claims that nothing changed.
-Interrupt never rewrites busy state as proof of its own success.
-Claude exposes no lifecycle acknowledgement for a manual interrupt, so delivery succeeds with `cancel=unconfirmed` and its adapter-owned busy state remains as observed.
+Interrupt never rewrites busy state as proof of its own success, and it never overwrites an adapter that reports its own cancellation.
+Claude and Devin expose no lifecycle acknowledgement for a manual interrupt AND fire nothing of their own on a cancelled turn, so delivery succeeds with `cancel=unconfirmed` while the plane closes their busy record itself, under the firstmate-owned `fm-interrupt` source bound to the running incarnation.
+That write is a record of a delivered and verified interrupt, not a cancellation claim, which is why `cancel=unconfirmed` still says what it says; without it an abandoned worker would read busy forever, because the only thing that would ever close its record is a later turn it will never run.
+`bin/fm-control-lib.sh` owns which adapters that applies to, so `bin/fm-send.sh`'s Escape path reaches the same answer rather than keeping a second copy of it.
 muse's session log records `terminal=cancelled` for the interrupted run, so the control plane reports `cancel=confirmed` only after observing that exact acknowledgement.
 
 An interrupt is not complete until the composer is empty.

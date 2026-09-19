@@ -195,6 +195,25 @@ fm_control_interrupt_ack_source() {  # <harness>
   esac
 }
 
+# Whether a delivered interrupt leaves the task's busy record open, so the
+# caller that delivered it must close the record itself. claude and devin are
+# the two verified adapters whose own lifecycle fires NOTHING on a cancelled
+# turn: neither Stop hook runs, so their record keeps reading busy to every
+# supervisor, Herdr included, for a worker sitting idle at its composer - and
+# for an abandoned worker no later turn ever arrives to close it. Every other
+# converted adapter closes its own record and must NOT be written for: gemini's
+# AfterAgent fires on a cancelled turn, cursor's transcript types an aborted
+# close, and muse reports a cancelled run in its session log, so a forged event
+# there would overwrite adapter-owned truth. Anything unlisted answers no,
+# because never forging an event is the safe default for an adapter whose
+# cancel behaviour has not been measured.
+fm_control_interrupt_needs_record_close() {  # <harness>
+  case "${1-}" in
+    claude|devin) return 0 ;;
+  esac
+  return 1
+}
+
 # The command that exits the agent from its own composer.
 fm_control_exit_command() {  # <harness>
   case "${1-}" in

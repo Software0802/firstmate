@@ -433,10 +433,28 @@ verify_interrupt_running() {
   printf '%s' "$proof"
 }
 
+# close_interrupted_busy_record: for the adapters whose own lifecycle fires
+# nothing on a cancelled turn (bin/fm-control-lib.sh names them and why), the
+# plane that delivered the interrupt is the only thing that can close the busy
+# record, so it does - with bin/fm-busy-event.sh, the semantic contract's one
+# writer, under the firstmate-owned fm-interrupt source bound to the
+# incarnation running right now. It runs only after the full interrupt sequence
+# was delivered AND verified, because reporting idle for a turn that is still
+# running is worse than reporting busy for one that stopped. A task with no
+# armed incarnation has no record to close.
+close_interrupted_busy_record() {
+  fm_control_interrupt_needs_record_close "$HARNESS" || return 0
+  [ -f "$STATE/$ID.busy-gen" ] || return 0
+  "$SCRIPT_DIR/fm-busy-event.sh" apply "$STATE" "$ID" idle \
+    --current-gen --source fm-interrupt --event interrupt >/dev/null \
+    || die "task $ID's interrupt landed, but its busy record could not be closed, so every supervisor would keep reading it busy; reconcile the record before the next lifecycle action"
+}
+
 do_interrupt() {
   local proof cancel
   cancel=$(deliver_interrupt) || return $?
   proof=$(verify_interrupt_running) || return $?
+  close_interrupted_busy_record
   printf '%s cancel=%s' "$proof" "$cancel"
 }
 
