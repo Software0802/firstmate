@@ -24,13 +24,18 @@
 #              keeps running. Postcondition: delivery succeeded, the endpoint
 #              still exists, and the agent is still alive where the backend can
 #              classify that. Cancellation is confirmed only from an adapter-
-#              owned acknowledgement and otherwise reported unconfirmed. Busy
-#              state is never rewritten as proof of the action.
+#              owned acknowledgement and otherwise reported unconfirmed; the
+#              busy record is never rewritten as proof of THAT. It is closed,
+#              though, for an adapter that fires nothing of its own on a
+#              cancelled turn, so no worker is left recorded busy at an idle
+#              composer; an adapter that closes its own record is untouched.
 #   exit       Stop the agent, preserving its terminal endpoint, worktree, and
 #              every uncommitted change. Interrupts first when the task reads
-#              busy, then submits the harness's exit command. Postcondition:
-#              the backend's recovery-grade classifier reports the agent gone.
-#              Already-stopped is success (idempotent).
+#              busy - closing the busy record on the same terms as the
+#              interrupt verb, so a later failure to stop cannot leave a
+#              cancelled turn recorded busy - then submits the harness's exit
+#              command. Postcondition: the backend's recovery-grade classifier
+#              reports the agent gone. Already-stopped is success (idempotent).
 #   relaunch   Transactionally replace the running agent with a new one, in the
 #              SAME endpoint and SAME worktree, on the same or a newly chosen
 #              harness/model/effort - so switching harness is one ordinary use
@@ -441,7 +446,11 @@ verify_interrupt_running() {
 # incarnation running right now. It runs only after the full interrupt sequence
 # was delivered AND verified, because reporting idle for a turn that is still
 # running is worse than reporting busy for one that stopped. A task with no
-# armed incarnation has no record to close.
+# armed incarnation has no record to close. Both verbs that deliver an
+# interrupt call this, so the stale-busy state is unreachable from either: the
+# exit verb interrupts a busy task before it types the exit command, and every
+# way that exit can still fail afterwards - a composer it cannot prove empty, an
+# agent that will not stop - leaves the same cancelled turn behind.
 close_interrupted_busy_record() {
   fm_control_interrupt_needs_record_close "$HARNESS" || return 0
   [ -f "$STATE/$ID.busy-gen" ] || return 0
@@ -490,7 +499,10 @@ do_exit() {
           printf 'stopped'
           return 0
           ;;
-        alive) interrupt_result="delivered verified=agent-alive cancel=$cancel" ;;
+        alive)
+          close_interrupted_busy_record
+          interrupt_result="delivered verified=agent-alive cancel=$cancel"
+          ;;
         missing) die "task $ID's recorded endpoint disappeared after interrupt delivery, so exit cannot prove whether the agent stopped" ;;
         *) die "task $ID's endpoint reads '$state' after interrupt delivery rather than a positively classified state; exit cannot prove whether the agent stopped" ;;
       esac

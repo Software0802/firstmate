@@ -115,7 +115,8 @@ Three prompts against two `Stop` events is the load-bearing asymmetry: the secon
 The third prompt's `Stop` then closed the record.
 So devin's own wiring leaves a cancelled turn open - the claude gap, not gemini's self-closing one - and `fm_control_interrupt_ack_source devin` is `none` for that reason: the cancellation is rendered, never recorded by the adapter.
 Whichever plane delivered the interrupt closes the record instead, writing `idle`/`fm-interrupt` bound to the running incarnation.
-`bin/fm-control.sh <id> interrupt` is the sanctioned one and does it after the full sequence is delivered and verified; `bin/fm-send.sh --key Escape` does the same after delivering the sequence itself.
+`bin/fm-control.sh <id> interrupt` is the sanctioned one and does it after the full sequence is delivered and verified, and so does `bin/fm-control.sh <id> exit` when it interrupts a busy task before typing the exit command, so an exit that then cannot prove the agent stopped still leaves no cancelled turn recorded busy.
+`bin/fm-send.sh --key Escape` does the same after delivering the sequence itself.
 Both read WHICH adapters need that close, and how many presses the sequence is, from `bin/fm-control-lib.sh` rather than deciding it twice.
 That ordering is load-bearing for devin specifically, because a single Escape merely ARMS the second press and the turn carries on, so recording after one press would report idle for a running worker.
 `tests/fm-devin-signals-live-e2e.test.sh` asserts that gap is still open, so a release that closes it fails loudly instead of leaving an unverified assumption in place.

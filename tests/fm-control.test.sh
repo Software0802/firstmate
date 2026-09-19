@@ -16,7 +16,8 @@
 #      is idempotent success, and an agent that does not stop fails closed.
 #      A delivered interrupt closes the busy record of an adapter whose own
 #      lifecycle fires nothing on a cancelled turn, and never overwrites one
-#      that closes its own.
+#      that closes its own - from the exit verb's embedded interrupt too, even
+#      when the exit that follows it fails.
 #   6. Marker non-regression: a control command to a kind=secondmate task
 #      carries NO from-firstmate marker and opens no pending-reply expectation,
 #      while fm-send's marking of the same task is untouched.
@@ -852,6 +853,26 @@ test_agent_that_does_not_stop_fails_closed() {
   pass "fm-control exit: a stubborn agent reports delivered input and an unconfirmed exit"
 }
 
+# exit interrupts a busy task before it types the exit command, so it cancels a
+# turn on every path - including the ones where the exit itself then fails. The
+# record close has to happen there too, or the stale-busy state the interrupt
+# verb no longer produces stays reachable through exit.
+test_failed_exit_still_closes_the_turn_it_cancelled() {
+  local dir out rc verdict
+  dir=$(new_case stubborn-record)
+  add_task "$dir" t1 devin
+  alive_as "$dir" devin
+  open_turn "$dir" devin-hook >/dev/null
+  out=$(env FM_FAKE_NEVER_DIES=1 PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" \
+    FM_FAKE_DIR="$dir/fake" FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 \
+    "$CONTROL" t1 exit 2>&1); rc=$?
+  expect_code 1 "$rc" "an agent that ignores its exit command should still fail closed"$'\n'"$out"
+  verdict=$(busy_verdict_for "$dir" devin)
+  [ "$verdict" = "idle fm-interrupt" ] \
+    || fail "exit cancelled the turn, so a failed stop must not leave it recorded busy, got '$verdict'"
+  pass "fm-control exit: a cancelled turn is closed even when the exit itself fails"
+}
+
 test_grok_interrupt_without_acknowledgement_reports_unconfirmed() {
   local dir out rc
   dir=$(new_case nosettle)
@@ -957,6 +978,7 @@ test_muse_interrupt_confirms_adapter_acknowledgement
 test_interrupt_revalidates_agent_after_acknowledgement_wait
 test_exit_accepts_agent_stopped_by_busy_interrupt
 test_agent_that_does_not_stop_fails_closed
+test_failed_exit_still_closes_the_turn_it_cancelled
 test_grok_interrupt_without_acknowledgement_reports_unconfirmed
 test_grok_idle_footer_does_not_confirm_cancellation
 test_secondmate_control_command_carries_no_marker

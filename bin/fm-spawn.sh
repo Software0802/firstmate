@@ -4009,8 +4009,10 @@ if [ "$KIND" != secondmate ]; then
     # a turn; Stop (normal completion), StopFailure (API-error turn end),
     # and SessionEnd (process shutdown) all close it, so an abnormal end can
     # never leave a stale busy record. Claude fires no hook for a manual
-    # interrupt: fm-control preserves the adapter-owned state, while the
-    # legacy fm-send --key Escape path records idle/fm-interrupt. Stop keeps
+    # interrupt, so the plane that delivered it closes the record instead:
+    # bin/fm-control.sh's interrupt and exit verbs write idle/fm-interrupt once
+    # the sequence is delivered and verified, and bin/fm-send.sh's --key Escape
+    # path does the same. Stop keeps
     # the turn-ended NOTIFICATION touch for the watcher. Every
     # hook command tolerates a refused event (|| true) so a stale-gen writer
     # can never break Claude's own lifecycle.
@@ -4069,10 +4071,12 @@ EOF
       # pane: SessionStart once, UserPromptSubmit once per prompt, Stop once per
       # COMPLETED turn, SessionEnd once on /exit with reason prompt_input_exit.
       # devin fires NO hook for a manual interrupt - the same gap claude has, and
-      # unlike gemini - so the control plane closes the record itself: the
-      # Escape path in bin/fm-send.sh writes idle/fm-interrupt for devin exactly
-      # as it does for claude, or a cancelled turn would read busy to every
-      # supervisor until some later turn's Stop closed it. Stop keeps the
+      # unlike gemini - so the plane that delivered the interrupt closes the
+      # record itself: bin/fm-control.sh's interrupt and exit verbs write
+      # idle/fm-interrupt once the sequence is delivered and verified, and
+      # bin/fm-send.sh's --key Escape path does the same, or a cancelled turn
+      # would read busy to every supervisor until some later turn's Stop closed
+      # it - which for an abandoned worker never comes. Stop keeps the
       # turn-ended NOTIFICATION touch for the watcher.
       # SessionStart writes the session sidecar instead of a busy event: it is
       # the spawn's readiness proof (NO devin hook fires while the folder-trust

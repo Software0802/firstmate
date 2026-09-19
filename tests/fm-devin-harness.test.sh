@@ -254,7 +254,9 @@ test_devin_classify_reads_its_hook_record() {
     || fail "UserPromptSubmit must classify 'busy devin-hook', got '$busy'"
   # A manual interrupt fires NO devin hook of any kind, which is why nothing
   # devin-owned appears between these two events; closing the record after an
-  # interrupt is fm-send's Escape path, covered in tests/fm-send-settle.test.sh.
+  # interrupt belongs to whichever plane delivered it, covered for the
+  # sanctioned control-plane verbs in tests/fm-control.test.sh and for the key
+  # path in tests/fm-send-settle.test.sh.
   "$ROOT/bin/fm-busy-event.sh" apply "$statedir" devin-case-1 idle \
     --gen "$gen" --source devin-hook --event session-end >/dev/null \
     || fail "a devin SessionEnd event must be accepted"

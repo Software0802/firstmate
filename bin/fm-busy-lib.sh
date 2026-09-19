@@ -41,9 +41,11 @@
 #   kimi-wire, kimi-hook  reserved: standalone Kimi, gated by fm_busy_kimi_verified
 # Firstmate-owned sources accepted for every converted adapter:
 #   fm-spawn         the launch-brief turn seeded at spawn
-#   fm-interrupt     the fm-send --key Escape idle event, written for the
-#                    adapters that fire nothing of their own on a manual
-#                    interrupt (claude, devin)
+#   fm-interrupt     the idle event written by whichever plane delivered a
+#                    manual interrupt - bin/fm-control.sh's interrupt and exit
+#                    verbs are the sanctioned writers, bin/fm-send.sh's --key
+#                    Escape path the other - for the adapters that fire nothing
+#                    of their own on a cancelled turn (claude, devin)
 #   fm-recovery      a documented recovery reset after relaunch
 # Classifier-only sources (never written into a record):
 #   endpoint-gone, herdr-native, grok-regex, rovo-regex, agy-regex, muse-session-log,
