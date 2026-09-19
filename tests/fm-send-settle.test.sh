@@ -29,7 +29,8 @@ TMP_ROOT=$(fm_test_tmproot fm-send-settle)
 # sleeping. send-keys always succeeds; display-message yields a numeric cursor_y;
 # capture-pane returns an empty bordered composer so fm_tmux_composer_state reads
 # "empty" (submit landed) on the first Enter. The sleep log path comes from
-# FM_SLEEP_LOG.
+# FM_SLEEP_LOG, and every named key the plane delivers is appended to FM_KEY_LOG
+# so a test can count the presses an interrupt actually put on the wire.
 make_stubs() {  # <dir> -> echoes fakebin dir
   local dir=$1 fb="$1/fakebin"
   mkdir -p "$fb"
@@ -37,7 +38,20 @@ make_stubs() {  # <dir> -> echoes fakebin dir
 #!/usr/bin/env bash
 set -u
 case "${1:-}" in
-  send-keys) exit 0 ;;
+  send-keys)
+    if [ -n "${FM_KEY_LOG:-}" ]; then
+      skip=0
+      for a in "$@"; do
+        if [ "$skip" -eq 1 ]; then skip=0; continue; fi
+        case "$a" in
+          send-keys) continue ;;
+          -t) skip=1; continue ;;
+          -l) break ;;
+        esac
+        printf '%s\n' "$a" >> "$FM_KEY_LOG"
+      done
+    fi
+    exit 0 ;;
   display-message)
     for a in "$@"; do case "$a" in *cursor_y*) printf '1\n'; exit 0 ;; esac; done
     printf 'fakepane\n'; exit 0 ;;
@@ -119,29 +133,49 @@ test_key_path_never_pauses() {
   pass "fm-send: the --key path never pauses (settle scoped to text submit)"
 }
 
-test_claude_escape_records_interrupt_idle() {
-  local dir fb log rc home gen out
-  dir="$TMP_ROOT/claude-interrupt"; mkdir -p "$dir"
-  fb=$(make_stubs "$dir"); log="$dir/sleep.log"
+# An Escape on this plane IS the interrupt, and the adapters need a DIFFERENT
+# number of presses to cancel at all: one for claude, two for devin, which the
+# control-plane table owns. What this plane must NOT do is record the outcome:
+# it captures nothing, so it cannot tell a cancelled turn from an absorbed
+# press - the case devin's own status row is built around, since one Escape
+# merely ARMS the second - and a guessed idle would tell every supervisor a
+# working worker was free. The record is left exactly as the adapter wrote it;
+# bin/fm-control.sh's interrupt verb, which does read the pane, owns the close.
+assert_escape_delivers_the_sequence_and_records_nothing() {  # <harness> <source> <expected-presses>
+  local harness=$1 source=$2 want=$3 dir fb log keys rc home gen out got
+  dir="$TMP_ROOT/$harness-interrupt"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/sleep.log"; keys="$dir/keys.log"
   home="$dir/home"; mkdir -p "$home/state"
   fm_write_meta "$home/state/task.meta" \
     "window=sess:win" "worktree=$home/wt" "project=$home/project" \
-    "harness=claude" "kind=ship" "mode=no-mistakes" "yolo=off"
+    "harness=$harness" "kind=ship" "mode=no-mistakes" "yolo=off"
   gen=$("$ROOT/bin/fm-busy-event.sh" arm "$home/state" task)
   printf 'busy_gen=%s\n' "$gen" >> "$home/state/task.meta"
+  "$ROOT/bin/fm-busy-event.sh" apply "$home/state" task busy \
+    --gen "$gen" --source "$source" --event turn-open >/dev/null \
+    || fail "could not open a $harness turn from source $source"
   : > "$log"
+  : > "$keys"
 
-  env PATH="$fb:$PATH" FM_HOME="$home" FM_SLEEP_LOG="$log" \
+  env PATH="$fb:$PATH" FM_HOME="$home" FM_SLEEP_LOG="$log" FM_KEY_LOG="$keys" \
     "$SEND" task --key Escape 2>/dev/null; rc=$?
-  expect_code 0 "$rc" "Claude Escape send should succeed"
-  out=$(fm_busy_classify tmux sess:win claude task "$home/state")
-  [ "$out" = "idle fm-interrupt" ] \
-    || fail "Claude Escape must classify idle/fm-interrupt, got '$out'"
-  pass "fm-send: a successful Claude Escape records the interrupt lifecycle edge"
+  expect_code 0 "$rc" "$harness Escape send should succeed"
+  got=$(grep -cxF Escape "$keys") || got=0
+  [ "$got" = "$want" ] \
+    || fail "$harness interrupts on $want Escape press(es), but the plane delivered $got"
+  out=$(fm_busy_classify tmux sess:win "$harness" task "$home/state")
+  [ "$out" = "busy $source" ] \
+    || fail "$harness's record is the adapter's to own on this plane, got '$out'"
+}
+
+test_escape_delivers_the_verified_sequence_and_records_nothing() {
+  assert_escape_delivers_the_sequence_and_records_nothing claude claude-hook 1
+  assert_escape_delivers_the_sequence_and_records_nothing devin devin-hook 2
+  pass "fm-send: Escape delivers each adapter's verified interrupt sequence and records no outcome"
 }
 
 test_default_send_pauses_one_second
 test_zero_disables_pause
 test_pause_is_tunable
 test_key_path_never_pauses
-test_claude_escape_records_interrupt_idle
+test_escape_delivers_the_verified_sequence_and_records_nothing

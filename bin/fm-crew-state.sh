@@ -255,7 +255,9 @@ pane_readable() {  # <target>
 # crew_busy_verdict: the crew's semantic busy state from the one contract
 # owner (bin/fm-busy-lib.sh), as "<busy|idle|unknown> <source>". A converted
 # adapter answers from its own lifecycle record; Grok answers from its
-# isolated rendered-tail fallback; a herdr crew's native `busy` is accepted
+# isolated rendered-tail fallback; a devin crew's open record is corroborated
+# there against devin's own composer, because devin's hooks cannot close a
+# turn that died on an API error; a herdr crew's native `busy` is accepted
 # when no record exists, but its native `idle` is NOT, because agent.get
 # reports generation state (idle while a crew blocks on its own long-running
 # foreground tool call) rather than turn state.

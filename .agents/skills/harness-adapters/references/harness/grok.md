@@ -38,7 +38,7 @@ For unavoidable non-project launch, `[hints] project_picker_disabled = true` in 
 ## Composer
 
 Fresh placeholder `Type a message...` uses dark 24-bit TRUECOLOR, not SGR-2.
-`fm_composer_strip_ghost` in `../../../bin/fm-composer-lib.sh` drops dim or faint and truecolor below `FM_COMPOSER_GHOST_LUMA_MAX`, default 128.
+`fm_composer_strip_ghost` in `../../../bin/fm-composer-lib.sh` drops dim or faint runs and any foreground at or below `FM_COMPOSER_GHOST_LUMA_MAX`, default 128, in either spelling a terminal makes a harness use (truecolor `38;2`, or 256-colour `38;5` entries 16-255).
 On Grok 0.2.93, real input `38;2;224;222;244` measured about 225 luminance, while borders and placeholder ranged from `38;2;50;47;70` through `38;2;110;106;134`, about 51-110, and were dropped.
 The truecolor rule assumes the fleet's dark theme; SGR-2 is theme-independent.
 Coverage is `../../../tests/fm-composer-ghost.test.sh` and `../../../tests/fm-backend-herdr.test.sh`.

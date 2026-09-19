@@ -46,6 +46,13 @@ fm_agent_process_classify_name() {  # <path> [argv0] -> agent|shell|other
     # single binary, comm=agy with argv[0]=agy), and a glob would claim
     # unrelated commands containing that fragment.
     agy) printf 'agent' ;;
+    # devin (Devin CLI) is anchored for the same reason as muse, omp, and agy:
+    # its live process name is the bare word `devin` for both halves of its
+    # two-process model (verified, devin 3000.10.31: a compiled single binary
+    # whose front end runs `devin ...` and whose agent child runs `devin acp`,
+    # comm=devin for each), and a glob would claim unrelated commands
+    # containing that fragment.
+    devin) printf 'agent' ;;
     zsh|bash|sh|dash|ash|ksh|mksh|tcsh|csh|fish) printf 'shell' ;;
     *)
       if fm_harness_path_name "$path" >/dev/null || fm_harness_path_name "$argv0" >/dev/null; then

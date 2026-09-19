@@ -24,13 +24,24 @@
 #              keeps running. Postcondition: delivery succeeded, the endpoint
 #              still exists, and the agent is still alive where the backend can
 #              classify that. Cancellation is confirmed only from an adapter-
-#              owned acknowledgement and otherwise reported unconfirmed. Busy
-#              state is never rewritten as proof of the action.
+#              owned acknowledgement and otherwise reported unconfirmed; the
+#              busy record is never rewritten as proof of THAT. It is closed,
+#              though, for an adapter that fires nothing of its own on a
+#              cancelled turn, once the harness's own in-flight token is
+#              observed cleared from the visible pane, so no worker is left
+#              recorded busy at an idle composer and none is recorded idle
+#              while it is still working. Without that evidence the record is
+#              left busy and the result says `busy-record=left-busy`; an
+#              adapter that closes its own record is untouched either way.
 #   exit       Stop the agent, preserving its terminal endpoint, worktree, and
 #              every uncommitted change. Interrupts first when the task reads
-#              busy, then submits the harness's exit command. Postcondition:
-#              the backend's recovery-grade classifier reports the agent gone.
-#              Already-stopped is success (idempotent).
+#              busy - closing the busy record on exactly the same terms as the
+#              interrupt verb, evidence included, so a later failure to stop
+#              cannot leave an observed-cancelled turn recorded busy and
+#              reports the same `busy-record=` outcome when it cannot - then
+#              submits the harness's exit
+#              command. Postcondition: the backend's recovery-grade classifier
+#              reports the agent gone. Already-stopped is success (idempotent).
 #   relaunch   Transactionally replace the running agent with a new one, in the
 #              SAME endpoint and SAME worktree, on the same or a newly chosen
 #              harness/model/effort - so switching harness is one ordinary use
@@ -89,7 +100,10 @@
 #
 # Environment knobs (all bounded waits, seconds):
 #   FM_CONTROL_POLL              poll interval for postcondition waits (0.5)
-#   FM_CONTROL_SETTLE_WAIT       adapter acknowledgement wait after interrupt (5)
+#   FM_CONTROL_SETTLE_WAIT       post-interrupt observation wait (5): the
+#                                adapter's own acknowledgement, and the
+#                                in-flight token clearing for an adapter whose
+#                                busy record this plane closes
 #   FM_CONTROL_EXIT_WAIT         alive->dead wait after the exit command (30)
 #   FM_CONTROL_LAUNCH_WAIT       dead->alive wait after a relaunch (90)
 #   FM_CONTROL_EXIT_RETRIES      Enter retries for the exit command (3)
@@ -132,6 +146,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-busy-lib.sh
 . "$SCRIPT_DIR/fm-busy-lib.sh"
+# shellcheck source=bin/fm-composer-lib.sh
+. "$SCRIPT_DIR/fm-composer-lib.sh"
 # shellcheck source=bin/fm-control-lib.sh
 . "$SCRIPT_DIR/fm-control-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
@@ -428,16 +444,85 @@ verify_interrupt_running() {
     after=$(agent_state)
     [ "$after" = alive ] \
       || die "task $ID's agent is '$after' after its interrupt key; an interrupt must leave the agent running"
-    proof=agent-alive
+    proof='agent-alive'
   fi
   printf '%s' "$proof"
 }
 
+# interrupt_turn_not_in_flight: positive evidence that the interrupted turn
+# really stopped, for the adapters whose cancellation is never acknowledged.
+# The evidence is the harness's own verified in-flight token (the same one
+# bin/fm-composer-lib.sh owns for delivery) having CLEARED from the pane within
+# the settle bound. Delivery plus a live process is not that evidence: one
+# Escape only rewrites devin's status row and a second press that misses the
+# prompt window is absorbed with the turn carrying on, so both keys can land on
+# a turn that never stops.
+# Read the VISIBLE viewport, never scrollback: a finished turn's status row
+# survives in history and would read as still in flight. A backend with no
+# viewport-bounded primitive can produce no evidence at all and says so.
+# The capture is reduced to the live status region the same way every other
+# reader of this token does (fm_pane_busy_state in bin/fm-tmux-lib.sh,
+# fm_backend_herdr_rendered_busy_state, fm_busy_devin_turn_contradicted):
+# unbounded, a transcript that merely PRINTED the token - this repository's own
+# sources and docs spell it out - would pin the answer at still-in-flight and
+# re-open the stale busy this exists to close.
+# A blank frame is not evidence either - devin blanks its pane while it
+# repaints - and reduces to nothing here, so it is polled past rather than read
+# as a cleared token.
+interrupt_turn_not_in_flight() {
+  local elapsed=0 visible
+  fm_backend_visible_capture_supported "$BACKEND" || return 1
+  while :; do
+    visible=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null \
+      | grep -v '^[[:space:]]*$' | tail -12) || visible=
+    if [ -n "$visible" ] \
+       && ! printf '%s' "$visible" | fm_busy_lines_match "$HARNESS"; then
+      return 0
+    fi
+    awk -v e="$elapsed" -v t="$SETTLE_WAIT" 'BEGIN{exit !(e < t)}' || break
+    sleep "$POLL"
+    elapsed=$(awk -v e="$elapsed" -v p="$POLL" 'BEGIN{printf "%.3f", e + p}')
+  done
+  return 1
+}
+
+# close_interrupted_busy_record: for the adapters whose own lifecycle fires
+# nothing on a cancelled turn (bin/fm-control-lib.sh names them and why), the
+# plane that delivered the interrupt is the only thing that can close the busy
+# record, so it does - with bin/fm-busy-event.sh, the semantic contract's one
+# writer, under the firstmate-owned fm-interrupt source bound to the
+# incarnation running right now. Echoes what happened to the record, empty when
+# this adapter or this task has none to close.
+# It runs only after the full interrupt sequence was delivered AND verified,
+# and only once the turn is positively observed out of flight, because
+# reporting idle for a turn that is still running is worse than reporting busy
+# for one that stopped: a stale busy is conservative, while a false idle makes
+# every supervisor act on a worker that never stopped. Without that evidence
+# the record is left exactly as the adapter wrote it.
+# A task with no armed incarnation has no record to close. Both verbs that
+# deliver an interrupt call this on identical terms, so neither is a way around
+# the other: the exit verb interrupts a busy task before it types the exit
+# command, and every way that exit can still fail afterwards - a composer it
+# cannot prove empty, an agent that will not stop - leaves the same cancelled
+# turn behind, closed here whenever the evidence is there and reported
+# `left-busy` when it is not.
+close_interrupted_busy_record() {
+  fm_control_interrupt_needs_record_close "$HARNESS" || return 0
+  [ -f "$STATE/$ID.busy-gen" ] || return 0
+  interrupt_turn_not_in_flight || { printf 'left-busy'; return 0; }
+  "$SCRIPT_DIR/fm-busy-event.sh" apply "$STATE" "$ID" idle \
+    --current-gen --source fm-interrupt --event interrupt >/dev/null \
+    || die "task $ID's interrupt landed, but its busy record could not be closed, so every supervisor would keep reading it busy; reconcile the record before the next lifecycle action"
+  printf 'closed'
+}
+
 do_interrupt() {
-  local proof cancel
+  local proof cancel record
   cancel=$(deliver_interrupt) || return $?
   proof=$(verify_interrupt_running) || return $?
+  record=$(close_interrupted_busy_record)
   printf '%s cancel=%s' "$proof" "$cancel"
+  [ -z "$record" ] || printf ' busy-record=%s' "$record"
 }
 
 retire_busy_incarnation() {
@@ -449,7 +534,7 @@ retire_busy_incarnation() {
 # do_exit: stop the running agent, preserving endpoint and worktree. Prints
 # `already-stopped` or `stopped`.
 do_exit() {
-  local state cmd verdict composer_state cancel interrupt_result=not-needed
+  local state cmd verdict composer_state cancel record interrupt_result=not-needed
   require_state_verified_backend exit
   state=$(agent_state)
   case "$state" in
@@ -472,7 +557,10 @@ do_exit() {
           printf 'stopped'
           return 0
           ;;
-        alive) interrupt_result="delivered verified=agent-alive cancel=$cancel" ;;
+        alive)
+          record=$(close_interrupted_busy_record)
+          interrupt_result="delivered verified=agent-alive cancel=$cancel${record:+ busy-record=$record}"
+          ;;
         missing) die "task $ID's recorded endpoint disappeared after interrupt delivery, so exit cannot prove whether the agent stopped" ;;
         *) die "task $ID's endpoint reads '$state' after interrupt delivery rather than a positively classified state; exit cannot prove whether the agent stopped" ;;
       esac

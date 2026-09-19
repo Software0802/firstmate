@@ -20,7 +20,7 @@ The failure repeated across harnesses and homes, and the workaround (remember to
   A caller either names an allowlisted verb or is refused.
 - **Per-harness mechanics**: the key that cancels a running turn, how many times it must be delivered, whether the composer needs clearing afterwards, the command that exits the agent, and which task kinds the adapter is verified to run.
   These were previously carried only in the [`harness-adapters`](../.agents/skills/harness-adapters/SKILL.md) skill's tool references, which now point here.
-  `bin/fm-send.sh`'s `--key` path reads the composer-clear table from this owner too, rather than keeping a second copy of it.
+  `bin/fm-send.sh`'s `--key` path reads the repeat count and the composer-clear table from this owner too, rather than keeping a second copy of either: an Escape on that path is an interrupt, so a double-press adapter gets both presses there as well.
 - **Per-backend capability**: which named keys a runtime backend can deliver, and whether it has a recovery-grade agent-state classifier able to prove an agent stopped.
 
 A recorded `harness=` is not always an exact adapter name: a task launched from a raw command records that command's basename instead.
@@ -30,13 +30,21 @@ A recorded `harness=` is not always an exact adapter name: a task launched from 
 
 | Verb | Effect | Postcondition |
 | --- | --- | --- |
-| `interrupt` | Deliver the harness's verified interrupt sequence while leaving the agent running. | Delivery succeeds while the endpoint still exists and the agent is still alive where the backend can classify that; cancellation is confirmed only from an adapter-owned acknowledgement and otherwise reports `cancel=unconfirmed`. |
-| `exit` | Stop the agent, preserving the endpoint, the worktree, and every uncommitted change. | The backend's recovery-grade classifier reports the agent gone. Already-stopped is idempotent success. |
+| `interrupt` | Deliver the harness's verified interrupt sequence while leaving the agent running. | Delivery succeeds while the endpoint still exists and the agent is still alive where the backend can classify that; cancellation is confirmed only from an adapter-owned acknowledgement and otherwise reports `cancel=unconfirmed`; and no adapter is left recorded busy for a turn this verb is able to observe cancelled. |
+| `exit` | Stop the agent, preserving the endpoint, the worktree, and every uncommitted change. | The backend's recovery-grade classifier reports the agent gone. Already-stopped is idempotent success. When it interrupts a busy task first, it closes the busy record on exactly the same terms the interrupt verb does, evidence included, so even an exit that then fails leaves no observed-cancelled turn recorded busy, and reports the same `busy-record=left-busy` when that evidence never arrives. |
 | `relaunch` | Replace the running agent with a new one in the same endpoint and worktree, on the exact recorded adapter or an explicitly chosen harness, model, and effort. | The new agent is alive on the recorded endpoint, and the durable record names the harness that is actually running. |
 
 An exit that delivers lifecycle input but cannot prove the agent stopped fails with `exit=unconfirmed`, reports the observed agent state and any interrupt cancellation claim, and never claims that nothing changed.
-Interrupt never rewrites busy state as proof of its own success.
-Claude exposes no lifecycle acknowledgement for a manual interrupt, so delivery succeeds with `cancel=unconfirmed` and its adapter-owned busy state remains as observed.
+Interrupt never rewrites busy state as proof of its own success, and it never overwrites an adapter that reports its own cancellation.
+Claude and Devin expose no lifecycle acknowledgement for a manual interrupt AND fire nothing of their own on a cancelled turn, so delivery succeeds with `cancel=unconfirmed` while the plane closes their busy record itself, under the firstmate-owned `fm-interrupt` source bound to the running incarnation.
+That write is a record of an interrupt that was delivered, verified, and observed to have ended the turn, not a cancellation claim, which is why `cancel=unconfirmed` still says what it says; without it an abandoned worker would read busy forever, because the only thing that would ever close its record is a later turn it will never run.
+Key delivery alone is not that observation: one Escape only rewrites Devin's status row, and a second press that misses the prompt window is absorbed with the turn carrying on, so the plane requires the harness's own in-flight token (`esc twice|again to interrupt` for Devin, `esc to interrupt` for Claude) to have cleared from the VISIBLE pane within the settle bound.
+Scrollback is deliberately not read, because a finished turn's status row survives there, and a blank frame is polled past rather than taken as a cleared token, because Devin blanks its pane while it repaints.
+When that evidence does not arrive - the token is still rendered, or the backend has no viewport-bounded capture at all - the record is left exactly as the adapter wrote it and the result reports `busy-record=left-busy`.
+A stale busy is the safe direction: it is conservative, while a false idle makes every supervisor act on a worker that never stopped.
+`bin/fm-control-lib.sh` owns which adapters that applies to, so the exit verb's own interrupt reaches the same answer rather than keeping a second copy of it.
+That answer is a permission and not an instruction: it may only be acted on by a caller that has positively observed the turn out of flight, which is why these two verbs are its only callers.
+`bin/fm-send.sh`'s Escape path delivers the same keys and reads no pane, so it writes no busy record at all and leaves a conservative stale busy rather than a guessed idle.
 muse's session log records `terminal=cancelled` for the interrupted run, so the control plane reports `cancel=confirmed` only after observing that exact acknowledgement.
 
 An interrupt is not complete until the composer is empty.
@@ -50,7 +58,7 @@ The clear is refused before anything is sent when the recorded backend cannot de
 Removing a worktree, closing an endpoint, or discarding work stays with [`bin/fm-teardown.sh`](../bin/fm-teardown.sh), which owns the landed-work test.
 
 **`resume` is not a verb.**
-It is not deterministic across the verified adapters: codex, grok, and gemini resume only from a session id printed at exit, opencode continues the most recent session for the cwd, and claude, pi, pi-signed, omp, kimi, and agy have no verified pane-resume contract.
+It is not deterministic across the verified adapters: codex, grok, gemini, and devin resume only from a session id printed at exit, opencode continues the most recent session for the cwd, and claude, pi, pi-signed, omp, kimi, and agy have no verified pane-resume contract.
 `relaunch` covers the same need on every adapter, because the brief on disk - not a harness-private session - is the durable instruction.
 
 ## Transactional relaunch
@@ -81,6 +89,10 @@ Switching harness is therefore one ordinary relaunch rather than a separate mech
 - A launch failure **after** the agent is stopped restores the prior durable record, keeps the progress note so a later recovery still has it, marks the journal `failed:launching`, and reports plainly that no agent is running and where the work is preserved.
 - If the launch owner already published the new record but no running agent can be confirmed, the new record is kept: the task is recorded on the new harness with no agent confirmed, which is exactly what recovery reconciles.
   Rewriting it back to the old harness would be a second, worse inaccuracy.
+
+Every one of those failures keeps the endpoint the relaunch adopted.
+A launch-then-confirm adapter whose readiness gate fails closes the endpoint it launched itself, so a half-started autonomous agent is never left running outside task control, but a relaunch adopts the task's recorded endpoint rather than creating one, so closing it would destroy the endpoint this verb promises to reuse and leave the record naming a window that is gone.
+The adopted endpoint therefore stays open and reachable through this plane, and the relaunch can simply be retried.
 
 ## Fail-closed boundaries
 

@@ -79,7 +79,9 @@
 # genuine empty agent composer ONLY inside a bordered container. On a bare row
 # it is a dead-shell prompt and classifies `unknown` (never a safe injection
 # target). The AGENT glyphs `❯` (claude), `›` (codex), `⟩` (U+27E9, muse),
-# and `→` (U+2192, cursor) are a genuine empty agent composer either way.
+# `→` (U+2192, cursor), and `❭` (U+276D, devin) are a genuine empty agent
+# composer either way. Each is a distinct ornament codepoint no shell uses as
+# a prompt, which is what keeps that permission narrow.
 # Both glyph sets are declared
 # exactly once below; every decision reaches them through the declarations.
 #
@@ -193,18 +195,34 @@ fm_composer_normalize_trim_var() {  # <varname>
 # plain, non-ghost text on stdout, dropping:
 #   - dim/faint runs (SGR 2): how claude and codex render ghost/suggestion text.
 #     A reset (SGR 0) or normal-intensity (SGR 22) ends a dim run.
-#   - dark/muted TRUECOLOR foreground runs (SGR 38;2;r;g;b or the colon form
-#     38:2::r:g:b) whose perceived luminance (0.299R + 0.587G + 0.114B) is below
-#     FM_COMPOSER_GHOST_LUMA_MAX (default 128): how grok renders its placeholder
-#     and hint text. A reset (SGR 0), a default-foreground (SGR 39), any base
-#     foreground colour (30-37 / 90-97), or a lighter 38;2 foreground ends the
-#     dark-foreground run. This assumes a DARK terminal theme, the firstmate
-#     fleet reality, where real typed input is bright and only de-emphasised UI
-#     is dark; the SGR-2 signal above stays theme-independent. A 256-colour
-#     foreground (38;5;n) is NOT luminance-tested - it is palette-dependent and
-#     no fleet harness uses it for ghost text, so it is kept (real text wins:
+#   - dark/muted foreground runs whose perceived luminance
+#     (0.299R + 0.587G + 0.114B) is AT OR BELOW FM_COMPOSER_GHOST_LUMA_MAX
+#     (default 128): how grok and devin render their placeholder and hint text.
+#     A reset (SGR 0), a default-foreground (SGR 39), any base foreground
+#     colour (30-37 / 90-97), or a lighter 38 foreground ends the run. This
+#     assumes a DARK terminal theme, the firstmate fleet reality, where real
+#     typed input is bright and only de-emphasised UI is dark; the SGR-2 signal
+#     above stays theme-independent.
+#     Both foreground spellings are tested, because a harness picks the
+#     spelling from the TERMINAL, not from its own design: TRUECOLOR
+#     (SGR 38;2;r;g;b or the colon form 38:2::r:g:b) when the pane advertises
+#     COLORTERM, and 256-COLOUR (38;5;n / 38:5:n) when it does not. devin draws
+#     one placeholder both ways - `38;2;124;124;124` with COLORTERM and
+#     `38;5;244` without (verified live, devin 3000.10.31, tmux 3.4) - and a
+#     tmux server started by a daemon, a cron job, or a non-truecolor ssh
+#     session carries no COLORTERM, so testing only truecolor left an idle
+#     devin composer reading `pending` and the control plane refusing to type
+#     `/exit` into it.
+#     Only palette entries 16-255 are tested, through the STANDARD xterm cube
+#     and grayscale ramp; 0-15 are theme colours whose RGB the terminal picks,
+#     so they are kept (a harness that renders real text in an 8-colour green
+#     must stay pending). The cutoff is inclusive for the same quantization
+#     reason: the ramp rounds devin's 124-grey up to entry 244, which is
+#     exactly 128,128,128, exactly the default cutoff.
+#     Keeping a run costs less than dropping one (real text wins:
 #     under-stripping merely defers, which the max-defer alarm surfaces, while
-#     over-stripping would inject over real input).
+#     over-stripping would inject over real input), which is why the test is
+#     luminance on a known palette rather than "any 38;5 run".
 # Raising FM_COMPOSER_GHOST_LUMA_MAX is not free: muse draws its `⟩` prompt glyph
 # in truecolor 38;2;90;160;255, luminance ~149.9 (verified, muse 0.1.0-R708.1),
 # the tightest margin over the 128 default in the fleet. Above ~150 that glyph is
@@ -232,20 +250,44 @@ fm_composer_strip_ghost() {
       if (code == "2") return p + 4
       return p + 1
     }
+    # xterm256_luma: perceived luminance of a STANDARD 256-colour palette
+    # entry - the 6x6x6 cube (16-231) and the grayscale ramp (232-255) - or -1
+    # for 0-15, the theme colours whose RGB the terminal picks and which are
+    # therefore never luminance-tested.
+    function xterm256_luma(idx,   c, lv, r, g, b) {
+      if (idx < 16 || idx > 255) return -1
+      if (idx >= 232) return 8 + (idx - 232) * 10   # grey ramp: luma == value
+      c = idx - 16
+      lv[0] = 0; lv[1] = 95; lv[2] = 135; lv[3] = 175; lv[4] = 215; lv[5] = 255
+      r = lv[int(c / 36)]; g = lv[int((c % 36) / 6)]; b = lv[c % 6]
+      return (299*r + 587*g + 114*b) / 1000
+    }
     # fg38_is_dark: 1 when the SGR 38 foreground starting at param p is a
-    # TRUECOLOR (38;2 / 38:2) whose luminance is below lumamax; 0 otherwise
-    # (a 38;5 palette colour, a bright truecolor, or a malformed run).
-    function fg38_is_dark(a, p, k, lumamax,   spec, nf, f, r, g, b) {
+    # TRUECOLOR (38;2 / 38:2) or a STANDARD-PALETTE 256-colour (38;5 / 38:5,
+    # entries 16-255) whose luminance is at or below lumamax; 0 otherwise (a
+    # theme colour 0-15, a bright foreground, or a malformed run).
+    function fg38_is_dark(a, p, k, lumamax,   spec, nf, f, r, g, b, luma) {
       spec = a[p]
       if (index(spec, ":") > 0) {           # colon form: whole colour in a[p]
         nf = split(spec, f, ":")
+        if (f[2] == "5") {
+          if (nf < 3) return 0
+          luma = xterm256_luma(f[nf] + 0)
+          return (luma >= 0 && luma <= lumamax) ? 1 : 0
+        }
         if (f[2] != "2" || nf < 5) return 0
         r = f[nf - 2] + 0; g = f[nf - 1] + 0; b = f[nf] + 0
-        return ((299*r + 587*g + 114*b) / 1000 < lumamax) ? 1 : 0
+        return ((299*r + 587*g + 114*b) / 1000 <= lumamax) ? 1 : 0
       }
-      if (p + 1 > k || a[p + 1] != "2" || p + 4 > k) return 0
+      if (p + 1 > k) return 0
+      if (a[p + 1] == "5") {
+        if (p + 2 > k) return 0
+        luma = xterm256_luma(a[p + 2] + 0)
+        return (luma >= 0 && luma <= lumamax) ? 1 : 0
+      }
+      if (a[p + 1] != "2" || p + 4 > k) return 0
       r = a[p + 2] + 0; g = a[p + 3] + 0; b = a[p + 4] + 0
-      return ((299*r + 587*g + 114*b) / 1000 < lumamax) ? 1 : 0
+      return ((299*r + 587*g + 114*b) / 1000 <= lumamax) ? 1 : 0
     }
     {
       line = $0; out = ""; dim = 0; darkfg = 0; n = length(line); i = 1
@@ -331,7 +373,11 @@ fm_composer_strip_ghost() {
 # tmux agy endpoint reaches the submit core with no recorded harness, and its
 # bare `>` composer verdict is `unknown`, so the busy footer is the only
 # turn-started acknowledgement that path can read.
-FM_DELIVERY_BUSY_REGEX_DEFAULT='esc (to )?interrupt|Working(\.\.\.|…)|Ctrl\+c:cancel|ctrl\+c to stop|esc[[:space:]]+to[[:space:]]+cancel'
+# devin's `esc twice to interrupt` joins the union for the same reason the
+# others do; its own spelling is deliberately not covered by the generic
+# `esc (to )?interrupt` alternative, which stops at the literal word after
+# `esc `.
+FM_DELIVERY_BUSY_REGEX_DEFAULT='esc (to )?interrupt|Working(\.\.\.|…)|Ctrl\+c:cancel|ctrl\+c to stop|esc[[:space:]]+to[[:space:]]+cancel|esc[[:space:]]+(twice|again)[[:space:]]+to[[:space:]]+interrupt'
 FM_DELIVERY_CLAUDE_BUSY_REGEX_DEFAULT='esc to interrupt|…[[:space:]]+\([0-9]+[smh]'
 FM_DELIVERY_CODEX_BUSY_REGEX_DEFAULT='esc to interrupt'
 FM_DELIVERY_OPENCODE_BUSY_REGEX_DEFAULT='esc interrupt'
@@ -370,6 +416,16 @@ FM_DELIVERY_CURSOR_BUSY_REGEX_DEFAULT='ctrl\+c to stop'
 # acknowledgement. Delivery guard only; recorded worker state comes from the
 # agy-regex fold in bin/fm-busy-lib.sh.
 FM_DELIVERY_AGY_BUSY_REGEX_DEFAULT='esc[[:space:]]+to[[:space:]]+cancel'
+# devin (Devin CLI) renders a status row above its composer while a turn runs:
+# a braille spinner, a phase word, the elapsed seconds, and the parenthesized
+# `(esc twice to interrupt)` token (verified live, devin 3000.10.31). ONE
+# Escape rewrites that token to `esc again to interrupt` while the turn keeps
+# running, so both spellings must acknowledge or an interrupted-then-resumed
+# pane would read idle mid-turn. The phase word beside the spinner is
+# model-driven and varied between `Thinking` and `Running tools` within one
+# turn, so it is deliberately not matched. Delivery guard only; recorded worker
+# state comes from the devin-hook record in bin/fm-busy-lib.sh.
+FM_DELIVERY_DEVIN_BUSY_REGEX_DEFAULT='esc[[:space:]]+(twice|again)[[:space:]]+to[[:space:]]+interrupt'
 FM_DELIVERY_KIMI_BUSY_REGEX_DEFAULT='^[[:space:]]*(🌑|🌒|🌓|🌔|🌕|🌖|🌗|🌘)[[:space:]]+·[[:space:]]+'
 
 fm_busy_lines_match() {  # [harness]
@@ -388,6 +444,7 @@ fm_busy_lines_match() {  # [harness]
       agy) regex=$FM_DELIVERY_AGY_BUSY_REGEX_DEFAULT ;;
       kimi) regex=$FM_DELIVERY_KIMI_BUSY_REGEX_DEFAULT ;;
       cursor) regex=$FM_DELIVERY_CURSOR_BUSY_REGEX_DEFAULT ;;
+      devin) regex=$FM_DELIVERY_DEVIN_BUSY_REGEX_DEFAULT ;;
       '') regex=$FM_DELIVERY_BUSY_REGEX_DEFAULT ;;
       *)
         # A supplied harness must never borrow another harness's signature.
@@ -405,7 +462,7 @@ fm_busy_lines_match() {  # [harness]
 # a dead-shell prompt and must never read `empty`. Newline-separated and
 # consumed by `read` rather than word splitting, so `$`, `%`, and `#` stay
 # literal and no entry is ever exposed to pathname expansion.
-FM_COMPOSER_AGENT_PROMPT_GLYPHS=$(printf '%s\n' '❯' '›' '⟩' '→')
+FM_COMPOSER_AGENT_PROMPT_GLYPHS=$(printf '%s\n' '❯' '›' '⟩' '→' '❭')
 FM_COMPOSER_SHELL_PROMPT_GLYPHS=$(printf '%s\n' '>' '$' '%' '#')
 
 # The ONE fleet-wide idle-placeholder set: composer text a harness renders in
@@ -415,9 +472,19 @@ FM_COMPOSER_SHELL_PROMPT_GLYPHS=$(printf '%s\n' '>' '$' '%' '#')
 # hence the unanchored tail). cursor-agent renders
 # two, both anchored: `Plan, search, build anything` in a fresh session and
 # `Add a follow-up` once a turn has completed (verified live on cursor-agent
-# 2026.08.11-e8db854). FM_COMPOSER_IDLE_RE overrides for an unverified harness;
-# matching is case-insensitive.
-FM_COMPOSER_IDLE_RE_DEFAULT='^Type a message\.\.\.$|^Ask anything(\.\.\.|…)|^Plan, search, build anything$|^Add a follow-up$'
+# 2026.08.11-e8db854). devin renders two as well, both anchored:
+# `Ask Devin to build features, fix bugs, or work on your code` when its
+# composer is idle and `Guide Devin while it works` while a turn is in flight
+# (verified live, devin 3000.10.31). FM_COMPOSER_IDLE_RE overrides for an
+# unverified harness; matching is case-insensitive.
+# devin's two are declared as their own literals because bin/fm-busy-lib.sh
+# reads the IDLE one as the rendered contradiction of an open devin turn
+# record (devin's hooks cannot close a turn that died on an API error); the
+# pair must mean the same thing in both places, so neither may be respelled
+# on its own.
+FM_COMPOSER_DEVIN_IDLE_PLACEHOLDER='Ask Devin to build features, fix bugs, or work on your code'
+FM_COMPOSER_DEVIN_BUSY_PLACEHOLDER='Guide Devin while it works'
+FM_COMPOSER_IDLE_RE_DEFAULT='^Type a message\.\.\.$|^Ask anything(\.\.\.|…)|^Plan, search, build anything$|^Add a follow-up$|^'"$FM_COMPOSER_DEVIN_IDLE_PLACEHOLDER"'$|^'"$FM_COMPOSER_DEVIN_BUSY_PLACEHOLDER"'$'
 
 # Opencode draws a mode/model footer line INSIDE its left-bar composer
 # ("Build · GPT-5.5 Fast OpenAI · high"). It is composer furniture, not typed

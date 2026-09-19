@@ -290,25 +290,44 @@ fm_send_normalize_key() { # <key>
   esac
 }
 
-fm_send_record_interrupt() { # <key>
-  local key=$1 id gen
+# fm_send_deliver_interrupt_repeats: an Escape on this plane IS the interrupt,
+# and two verified adapters cancel only on a DOUBLE press - opencode, and devin,
+# whose running-turn status row says so itself by rewriting `esc twice to
+# interrupt` into `esc again to interrupt` after the first press while the turn
+# carries on. HOW MANY presses an adapter needs belongs to the one control-plane
+# capability table (bin/fm-control-lib.sh), the same table fm_send_clear_after_interrupt
+# reads and the same one bin/fm-control.sh's interrupt verb reads, so the
+# remaining presses are delivered here back to back the way that verb delivers
+# them: a devin press that arrived seconds later was absorbed and the turn
+# carried on. A harness with no verified repeat count keeps the single press it
+# has always had. Delivering the full sequence is all this plane can do about a
+# turn: whether that sequence actually cancelled it is unobservable from here,
+# which is why no busy record is written below.
+fm_send_deliver_interrupt_repeats() { # <key>
+  local key=$1 family repeat i=1
   [ "$key" = Escape ] || return 0
-  case "$TARGET_HARNESS" in claude*) : ;; *) return 0 ;; esac
-  [ -n "$TARGET_META" ] || return 0
-  id=$(fm_send_id_from_meta "$TARGET_META")
-  [ -f "$STATE/$id.busy-gen" ] || return 0
-  gen=$(fm_meta_get "$TARGET_META" busy_gen)
-  if [ -n "$gen" ]; then
-    "$FM_ROOT/bin/fm-busy-event.sh" apply "$STATE" "$id" idle \
-      --gen "$gen" --source fm-interrupt --event interrupt
-  else
-    "$FM_ROOT/bin/fm-busy-event.sh" apply "$STATE" "$id" idle \
-      --current-gen --source fm-interrupt --event interrupt
-  fi || {
-    echo "error: key '$key' reached $T, but the Claude interrupt state could not be recorded for $id" >&2
-    return 1
-  }
+  [ "$TARGET_BACKEND" != remote ] || return 0
+  family=$(fm_control_harness_family "$TARGET_HARNESS") || return 0
+  repeat=$(fm_control_interrupt_repeat "$family") || return 0
+  while [ "$i" -lt "$repeat" ]; do
+    sleep 0.2
+    if ! fm_backend_send_key "$TARGET_BACKEND" "$T" "$key" "$EXPECTED_LABEL"; then
+      echo "error: Escape reached $T, but $TARGET_HARNESS needs $repeat presses to interrupt and press $((i + 1)) was not delivered; its turn may still be running." >&2
+      return 1
+    fi
+    i=$((i + 1))
+  done
 }
+
+# This plane deliberately writes NO busy record for the Escape it just
+# delivered. The adapters that fire nothing of their own on a cancelled turn
+# (bin/fm-control-lib.sh names them) may only have their record closed on
+# positive evidence that the turn actually stopped, and this plane captures
+# nothing: it cannot tell a cancelled turn from an absorbed press, so any write
+# here would be a guess, and a guessed idle makes every supervisor act on a
+# worker that is still running. Leaving the record busy is the conservative
+# outcome, and bin/fm-control.sh's interrupt and exit verbs - the only
+# sanctioned lifecycle path, which does read the pane - close it properly.
 
 fm_send_meta_for_key_value() { # <state-dir> <key> <value>
   local state=$1 key=$2 value=$3 meta got
@@ -748,8 +767,8 @@ if [ "${1:-}" = "--key" ]; then
     echo "error: key '$key' not sent to $T ($TARGET_BACKEND send failed; tried $RESOLUTION_TRIED)" >&2
     exit 1
   fi
+  fm_send_deliver_interrupt_repeats "$semantic_key" || exit 1
   fm_send_clear_after_interrupt "$semantic_key" || exit 1
-  fm_send_record_interrupt "$semantic_key" || exit 1
 else
   MESSAGE=$*
   if [ -z "${MESSAGE//[[:space:]]/}" ]; then
