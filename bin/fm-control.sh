@@ -35,9 +35,11 @@
 #              adapter that closes its own record is untouched either way.
 #   exit       Stop the agent, preserving its terminal endpoint, worktree, and
 #              every uncommitted change. Interrupts first when the task reads
-#              busy - closing the busy record on the same terms as the
-#              interrupt verb, so a later failure to stop cannot leave a
-#              cancelled turn recorded busy - then submits the harness's exit
+#              busy - closing the busy record on exactly the same terms as the
+#              interrupt verb, evidence included, so a later failure to stop
+#              cannot leave an observed-cancelled turn recorded busy and
+#              reports the same `busy-record=` outcome when it cannot - then
+#              submits the harness's exit
 #              command. Postcondition: the backend's recovery-grade classifier
 #              reports the agent gone. Already-stopped is success (idempotent).
 #   relaunch   Transactionally replace the running agent with a new one, in the
@@ -455,15 +457,23 @@ verify_interrupt_running() {
 # Read the VISIBLE viewport, never scrollback: a finished turn's status row
 # survives in history and would read as still in flight. A backend with no
 # viewport-bounded primitive can produce no evidence at all and says so.
+# The capture is reduced to the live status region the same way every other
+# reader of this token does (fm_pane_busy_state in bin/fm-tmux-lib.sh,
+# fm_backend_herdr_rendered_busy_state, fm_busy_devin_turn_contradicted):
+# unbounded, a transcript that merely PRINTED the token - this repository's own
+# sources and docs spell it out - would pin the answer at still-in-flight and
+# re-open the stale busy this exists to close.
 # A blank frame is not evidence either - devin blanks its pane while it
-# repaints - so it is polled past rather than read as a cleared token.
+# repaints - and reduces to nothing here, so it is polled past rather than read
+# as a cleared token.
 interrupt_turn_not_in_flight() {
-  local elapsed=0 view
+  local elapsed=0 visible
   fm_backend_visible_capture_supported "$BACKEND" || return 1
   while :; do
-    view=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) || view=
-    if [ -n "${view//[[:space:]]/}" ] \
-       && ! printf '%s' "$view" | fm_busy_lines_match "$HARNESS"; then
+    visible=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null \
+      | grep -v '^[[:space:]]*$' | tail -12) || visible=
+    if [ -n "$visible" ] \
+       && ! printf '%s' "$visible" | fm_busy_lines_match "$HARNESS"; then
       return 0
     fi
     awk -v e="$elapsed" -v t="$SETTLE_WAIT" 'BEGIN{exit !(e < t)}' || break
@@ -487,11 +497,12 @@ interrupt_turn_not_in_flight() {
 # every supervisor act on a worker that never stopped. Without that evidence
 # the record is left exactly as the adapter wrote it.
 # A task with no armed incarnation has no record to close. Both verbs that
-# deliver an interrupt call this, so the stale-busy state is unreachable from
-# either: the exit verb interrupts a busy task before it types the exit
+# deliver an interrupt call this on identical terms, so neither is a way around
+# the other: the exit verb interrupts a busy task before it types the exit
 # command, and every way that exit can still fail afterwards - a composer it
 # cannot prove empty, an agent that will not stop - leaves the same cancelled
-# turn behind.
+# turn behind, closed here whenever the evidence is there and reported
+# `left-busy` when it is not.
 close_interrupted_busy_record() {
   fm_control_interrupt_needs_record_close "$HARNESS" || return 0
   [ -f "$STATE/$ID.busy-gen" ] || return 0

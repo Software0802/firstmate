@@ -4011,8 +4011,10 @@ if [ "$KIND" != secondmate ]; then
     # never leave a stale busy record. Claude fires no hook for a manual
     # interrupt, so the plane that delivered it closes the record instead:
     # bin/fm-control.sh's interrupt and exit verbs write idle/fm-interrupt once
-    # the sequence is delivered and verified, and bin/fm-send.sh's --key Escape
-    # path does the same. Stop keeps
+    # the sequence is delivered, verified, and claude's own in-flight token
+    # observed cleared from the pane - they leave the record busy and report
+    # busy-record=left-busy rather than call a running turn idle - and
+    # bin/fm-send.sh's --key Escape path writes it on delivery alone. Stop keeps
     # the turn-ended NOTIFICATION touch for the watcher. Every
     # hook command tolerates a refused event (|| true) so a stale-gen writer
     # can never break Claude's own lifecycle.
@@ -4077,8 +4079,11 @@ EOF
       # devin fires NO hook for a manual interrupt - the same gap claude has, and
       # unlike gemini - so the plane that delivered the interrupt closes the
       # record itself: bin/fm-control.sh's interrupt and exit verbs write
-      # idle/fm-interrupt once the sequence is delivered and verified, and
-      # bin/fm-send.sh's --key Escape path does the same, or a cancelled turn
+      # idle/fm-interrupt once the sequence is delivered, verified, and devin's
+      # own esc-twice token observed cleared from the pane - an absorbed press
+      # leaves the record busy and reports busy-record=left-busy rather than
+      # call a running turn idle - and
+      # bin/fm-send.sh's --key Escape path does so on delivery, or a cancelled turn
       # would read busy to every supervisor until some later turn's Stop closed
       # it - which for an abandoned worker never comes. Stop keeps the
       # turn-ended NOTIFICATION touch for the watcher.

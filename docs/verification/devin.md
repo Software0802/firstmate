@@ -115,7 +115,8 @@ Three prompts against two `Stop` events is the load-bearing asymmetry: the secon
 The third prompt's `Stop` then closed the record.
 So devin's own wiring leaves a cancelled turn open - the claude gap, not gemini's self-closing one - and `fm_control_interrupt_ack_source devin` is `none` for that reason: the cancellation is rendered, never recorded by the adapter.
 Whichever plane delivered the interrupt closes the record instead, writing `idle`/`fm-interrupt` bound to the running incarnation.
-`bin/fm-control.sh <id> interrupt` is the sanctioned one and does it after the full sequence is delivered and verified, and so does `bin/fm-control.sh <id> exit` when it interrupts a busy task before typing the exit command, so an exit that then cannot prove the agent stopped still leaves no cancelled turn recorded busy.
+`bin/fm-control.sh <id> interrupt` is the sanctioned one and does it after the full sequence is delivered, verified, and the in-flight token observed cleared from the pane, and so does `bin/fm-control.sh <id> exit` when it interrupts a busy task before typing the exit command, so an exit that then cannot prove the agent stopped still leaves no observed-cancelled turn recorded busy.
+Neither verb closes the record without that last observation; both report `busy-record=left-busy` instead, which is the conservative direction.
 `bin/fm-send.sh --key Escape` does the same after delivering the sequence itself.
 Both read WHICH adapters need that close, and how many presses the sequence is, from `bin/fm-control-lib.sh` rather than deciding it twice.
 The interrupt is not the only end this triple cannot report; see "The one turn end devin cannot report" below for the API-error end, which no plane of firstmate's delivers and no devin hook fires for.
@@ -253,7 +254,7 @@ teardown devin-smoke-1 complete (window firstmate:fm-devin-smoke-1, worktree ...
 ```
 
 That interrupt left the busy record untouched, because the smoke ran before the control plane took over closing it.
-Both verbs now write `idle`/`fm-interrupt` themselves once the full sequence is delivered and verified, the contract the hook-lifecycle section above owns.
+Both verbs now write `idle`/`fm-interrupt` themselves once the full sequence is delivered, verified, and the in-flight token observed cleared, the contract the hook-lifecycle section above owns.
 The relaunch minted a fresh busy generation (`g1789817836.505320.12981`) and a fresh devin session id (`dour-rain`, replacing `flashy-bath`), proving the wiring is re-armed rather than adopted.
 Teardown left `state/` holding none of the task's files, including the per-task config and the session sidecar.
 

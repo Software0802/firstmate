@@ -820,6 +820,37 @@ test_interrupt_never_records_idle_for_a_turn_still_in_flight() {
 
 # devin blanks its pane while it repaints, so a blank frame is the absence of
 # evidence rather than evidence of a stopped turn.
+# A pane that merely PRINTED the interrupt token is not a turn in flight: this
+# repository's own sources and docs spell both tokens out, so any worker whose
+# last tool result rendered one would otherwise be pinned at still-in-flight
+# for the whole settle bound and left recorded busy forever. Only the live
+# status region answers the question.
+assert_a_printed_token_is_not_a_running_turn() {  # <harness> <busy-source>
+  local harness=$1 source=$2 dir out rc verdict
+  dir=$(new_case "printed-token-$harness")
+  add_task "$dir" t1 "$harness"
+  alive_as "$dir" "$harness"
+  {
+    in_flight_pane "$harness" | head -1
+    printf '  %s | ordinary transcript output\n' 1 2 3 4 5 6 7 8 9 10 11 12
+    settled_pane "$harness"
+  } > "$dir/fake/pane"
+  open_turn "$dir" "$source" >/dev/null
+  out=$(run_control "$dir" t1 interrupt); rc=$?
+  expect_code 0 "$rc" "an interrupt on $harness should deliver"$'\n'"$out"
+  verdict=$(busy_verdict_for "$dir" "$harness")
+  [ "$verdict" = "idle fm-interrupt" ] \
+    || fail "$harness scrolled its token out of the status region, so the record must close, got '$verdict'"
+  assert_contains "$out" "busy-record=closed" \
+    "a token in transcript text must not be read as a turn still in flight"
+}
+
+test_interrupt_reads_the_status_region_not_the_whole_pane() {
+  assert_a_printed_token_is_not_a_running_turn claude claude-hook
+  assert_a_printed_token_is_not_a_running_turn devin devin-hook
+  pass "fm-control interrupt: a token printed in the transcript is not a live turn"
+}
+
 test_interrupt_does_not_read_a_blank_pane_as_a_stopped_turn() {
   local dir out rc verdict
   dir=$(new_case blank-frame)
@@ -1058,6 +1089,7 @@ test_busy_agent_is_interrupted_before_the_exit_command
 test_idle_agent_is_not_interrupted
 test_interrupt_closes_a_record_no_adapter_hook_will_close
 test_interrupt_never_records_idle_for_a_turn_still_in_flight
+test_interrupt_reads_the_status_region_not_the_whole_pane
 test_interrupt_does_not_read_a_blank_pane_as_a_stopped_turn
 test_interrupt_preserves_a_self_closing_adapters_record
 test_muse_interrupt_confirms_adapter_acknowledgement
