@@ -1,0 +1,69 @@
+<!doctype html><meta charset="utf-8">
+<title>Live Devin crewmate - control-plane interrupt</title>
+<style>body{background:#16181d;color:#d3d7cf;font-family:ui-sans-serif,system-ui,sans-serif;margin:24px auto;max-width:900px}
+h1{font-size:19px}h2{font-size:14px;color:#8ae234;margin-top:26px;font-weight:600}
+pre.term{background:#0b0d10;border:1px solid #2b303b;border-radius:6px;padding:12px;overflow-x:auto;
+ font-family:ui-monospace,"DejaVu Sans Mono",monospace;font-size:12.5px;line-height:1.32;white-space:pre}
+pre.note{background:#101820;border-left:3px solid #729fcf;padding:8px 12px;font-family:ui-monospace,monospace;font-size:12px;color:#9fb6cf;white-space:pre-wrap}
+p{font-size:13px;color:#9aa4b2}</style>
+<h1>Live Devin crewmate: real tmux pane, real Devin CLI, firstmate control plane</h1>
+<p>Captured from the task's own tmux window during this test run (isolated tmux socket, sandboxed FM_HOME, real <code>devin</code> 3000.10.31 on model swe-2-medium).</p>
+<h2>1. Mid-turn: devin renders its busy token; firstmate reads the crew as working</h2>
+<pre class="term"> <span style="font-weight:700"></span><span style="color:#d75fff;font-weight:700">A History of Bridges</span>
+
+ Few human artifacts so plainly declare our intentions as a bridge. A bridge is
+ an argument made in stone, timber, steel, or concrete: an argument that the
+ obstacle — river, gorge, strait, or sea — does not get the final word. The
+ history of bridges is therefore the history of engineering itself, but also of
+ empire, commerce, religion, and the simple stubbornness of people who wanted to
+ be on the other side.
+
+ <span style="font-weight:700"></span><span style="color:#5fd7ff;font-weight:700">Natural Beginnings</span>
+
+ The first bridges were not built at all. A fallen tree spanning a stream, a
+ stone slab dropped across a brook, a vine tangled between two cliffs — nature
+ provided the earliest crossings, and humans simply used them. The leap from
+ using a found span to making one is among the oldest acts of engineering, older
+ than the wheel and probably older than agriculture. Early peoples placed logs
+ across streams, then learned to lay flat stones on stacked piers, producing the
+ clapper bridges
+
+<span style="color:#ff8787">⠇⠀</span><span style="color:#808080"> Typing · 27s (esc twice to interrupt)</span>
+<span style="color:#444444">──────────────────────────────────────────────────────</span> <span style="color:#d7d7af">(bypass permissions on)</span> <span style="color:#444444">─
+</span>❭ <span style="color:#808080">Guide Devin while it works</span>
+<span style="color:#444444">────────────────────────────────────────────────────────────────────────────────
+</span>SWE-2 Medium                                     <span style="color:#808080">Context: 13k / 262k tokens (4%)
+</span></pre>
+<pre class="note">$ bin/fm-send.sh devin-live-lab-2 "Write a detailed 2000-word essay ..."
+v1 gen=g1789832701.3267936.19303 seq=2 state=busy source=devin-hook event=user-prompt-submit ts=1789832707
+state: working · source: pane · harness busy (devin-hook)</pre>
+<h2>2. After the control-plane interrupt: turn cancelled, busy record closed to idle/fm-interrupt</h2>
+<pre class="term"> Few human artifacts so plainly declare our intentions as a bridge. A bridge is
+ an argument made in stone, timber, steel, or concrete: an argument that the
+ obstacle — river, gorge, strait, or sea — does not get the final word. The
+ history of bridges is therefore the history of engineering itself, but also of
+ empire, commerce, religion, and the simple stubbornness of people who wanted to
+ be on the other side.
+
+ <span style="font-weight:700"></span><span style="color:#5fd7ff;font-weight:700">Natural Beginnings</span>
+
+ The first bridges were not built at all. A fallen tree spanning a stream, a
+ stone slab dropped across a brook, a vine tangled between two cliffs — nature
+ provided the earliest crossings, and humans simply used them. The leap from
+ using a found span to making one is among the oldest acts of engineering, older
+ than the wheel and probably older than agriculture. Early peoples placed logs
+ across streams, then learned to lay flat stones on stacked piers, producing the
+ clapper bridges that still survive on Dartmoor in England — slabs of granite
+ resting on piers of unmortared stone, some dating
+
+ <span style="color:#808080">✱</span> <span style="color:#808080">Canceled. What should Devin do?</span>
+
+<span style="color:#444444">──────────────────────────────────────────────────────</span> <span style="color:#d7d7af">(bypass permissions on)</span> <span style="color:#444444">─
+</span>❭ <span style="color:#808080">Ask Devin to build features, fix bugs, or work on your code</span>
+<span style="color:#444444">────────────────────────────────────────────────────────────────────────────────
+</span>SWE-2 Medium                                     <span style="color:#808080">Context: 13k / 262k tokens (4%)
+</span></pre>
+<pre class="note">$ bin/fm-control.sh devin-live-lab-2 interrupt
+interrupt-delivered devin-live-lab-2 harness=devin backend=tmux verified=agent-alive cancel=unconfirmed busy-record=closed
+v1 gen=g1789832701.3267936.19303 seq=3 state=idle source=fm-interrupt event=interrupt ts=1789832734
+state: unknown · source: none · no current-state source available</pre>

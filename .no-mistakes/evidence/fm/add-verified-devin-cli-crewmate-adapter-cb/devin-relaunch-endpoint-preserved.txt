@@ -1,0 +1,77 @@
+=== Devin CLI adapter: live re-validation of the round-1 relaunch failure ===
+Lab: isolated tmux socket (-L fmdevinlab2), sandboxed FM_HOME/HOME/XDG_DATA_HOME,
+throwaway treehouse pool, real devin 3000.10.31 (Devin Max), real treehouse, real tmux.
+Round 1 verdict was no-go on exactly one scenario: a control-plane relaunch whose devin
+readiness gate expired DESTROYED the task's endpoint and left it permanently recorded busy.
+This file re-drives that scenario, its fix, and the guard that the fix must not weaken.
+
+=== S9: a relaunch whose devin readiness gate expires must keep the endpoint it ADOPTED ===
+
+--- before: the task's endpoint and its live worker ---
+$ tmux list-windows -t firstmate -F '#{window_name}'
+bash
+fm-devin-lab-a
+fm-devin-lab-b
+fm-devin-lab-c
+fm-devin-lab-d
+$ tmux display-message -p -t firstmate:fm-devin-lab-d '#{pane_current_command} | #{pane_current_path}'
+devin | /tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/4/project
+$ grep -E '^window=|^worktree=' state/devin-lab-d.meta
+window=firstmate:fm-devin-lab-d
+worktree=/tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/4/project
+
+--- the relaunch, with devin's readiness bound forced to expire (FM_DEVIN_READY_POLLS=2) ---
+$ bin/fm-control.sh devin-lab-d relaunch --note 'force the readiness gate to expire'
+error: devin did not start its session in the pre-trusted worktree in window firstmate:fm-devin-lab-d; inspect window firstmate:fm-devin-lab-d
+error: the replacement agent for devin-lab-d could not be launched on devin
+error: devin-lab-d was relaunched on devin but no running agent could be confirmed; its work is preserved at /tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/4/project
+exit=1 (the relaunch correctly reports it could not confirm a running agent)
+
+--- after: the adopted endpoint is STILL THERE (before this fix it was killed) ---
+$ tmux list-windows -t firstmate -F '#{window_name}'
+bash
+fm-devin-lab-a
+fm-devin-lab-b
+fm-devin-lab-c
+fm-devin-lab-d
+$ tmux display-message -p -t firstmate:fm-devin-lab-d '#{pane_current_command} | #{pane_current_path}'
+devin | /tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/4/project
+$ grep -E '^window=|^worktree=' state/devin-lab-d.meta
+window=firstmate:fm-devin-lab-d
+worktree=/tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/4/project
+
+--- the retried relaunch then succeeds into that same preserved endpoint ---
+$ bin/fm-control.sh devin-lab-d relaunch --note 'retry on the preserved endpoint'
+relaunched devin-lab-d harness=devin from=devin model=swe-2-medium effort=default backend=tmux endpoint=firstmate:fm-devin-lab-d worktree=/tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/4/project
+exit=0
+state/devin-lab-d.busy-state  v1 gen=g1789833629.3610631.9618 seq=2 state=busy source=devin-hook event=user-prompt-submit
+$ bin/fm-crew-state.sh devin-lab-d   ->  state: working - source: pane - harness busy (devin-hook)
+
+Round 1, for contrast, saw this after the same failure:
+  tmux list-windows showed only firstmate:0 (the task window was gone)
+  bin/fm-control.sh <id> relaunch  ->  error: task ...'s recorded endpoint is gone, so there is
+                                       no agent to stop; reconcile the task before any further control action
+
+=== S10 (guard): a FRESH spawn whose readiness gate expires must still close the endpoint it CREATED ===
+The relaunch carve-out must not weaken the orphan protection for a spawn that CREATED its endpoint.
+
+$ tmux list-windows -t firstmate -F '#{window_name}'   (before)
+bash
+fm-devin-lab-a
+fm-devin-lab-b
+fm-devin-lab-c
+fm-devin-lab-d
+
+$ FM_DEVIN_READY_POLLS=2 bin/fm-spawn.sh devin-lab-e <project> --harness devin --mode local-only --yolo off --model swe-2-medium
+error: devin did not start its session in the pre-trusted worktree in window firstmate:fm-devin-lab-e; inspect window firstmate:fm-devin-lab-e
+exit=1
+
+$ tmux list-windows -t firstmate -F '#{window_name}'   (after: fm-devin-lab-e was never left behind)
+bash
+fm-devin-lab-a
+fm-devin-lab-b
+fm-devin-lab-c
+fm-devin-lab-d
+
+$ ps -eo pid,args | grep -F devin-lab-e   (no half-started devin left running outside task control)
+(no process)

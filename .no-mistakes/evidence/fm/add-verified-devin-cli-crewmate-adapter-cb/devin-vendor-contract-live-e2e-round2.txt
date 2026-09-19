@@ -1,0 +1,13 @@
+ok - no devin hook fires while the folder-trust dialog gates the pane
+ok - devin's SessionStart hook fires once the trust dialog is answered
+ok - the real devin worker processed its launch prompt
+ok - devin's UserPromptSubmit and Stop hooks bracket a completed turn
+ok - the settled devin composer no longer matches the busy signature
+ok - the real devin busy token matches its registered signature in flight
+ok - one Escape only arms devin's second press
+ok - a double Escape cancels the real devin turn
+ok - devin still fires no Stop hook for a manual interrupt
+ok - /exit stops the real devin process and fires its SessionEnd hook
+LIVE_E2E_EXIT=0
+
+[exited with code 0]

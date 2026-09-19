@@ -1,0 +1,24 @@
+Adversarial probe: devin printed the literal in-flight token into its transcript, then a
+real turn was interrupted through the control plane.
+
+$ bin/fm-send.sh devin-live-lab-1 "Reply with exactly this one line and nothing else: esc twice to interrupt"
+$ bin/fm-send.sh devin-live-lab-1 "Think silently ... then reply DONE."     (opens a turn)
+$ bin/fm-control.sh devin-live-lab-1 interrupt
+interrupt-delivered devin-live-lab-1 harness=devin backend=tmux verified=agent-alive cancel=unconfirmed busy-record=left-busy
+
+pane right after (visible tail, blank lines dropped - the reduction the close uses):
+ 003
+ esc twice to interrupt                 <-- transcript text, not a live status row
+ ❭ : Firstmate instruction waiting: list ...
+ ⏺ Listed ~/state/devin-live-lab-1.inbox, ~/state/devin-live-lab-1.inbox/handled
+ ✱ Canceled. What should Devin do?      <-- the turn DID stop
+ ❭ Ask Devin to build features, fix bugs, or work on your code
+
+$ bin/fm-crew-state.sh devin-live-lab-1
+state: working - source: pane - harness busy (devin-hook)      <-- stale busy for a cancelled turn
+
+It self-heals at the next turn: a later prompt closed the record again
+(v1 ... seq=11 state=idle source=devin-hook event=stop), about 50s later.
+This is the conservative direction the recorded ruling chose (a false idle would be worse),
+and the close scopes the token read to the last 12 non-blank visible lines the same way
+fm_pane_busy_state does, so transcript text inside that window still reads as in flight.

@@ -1,0 +1,74 @@
+=== Devin CLI adapter: live fleet-dispatch transcript (round 2, re-driven on HEAD dd455e2) ===
+Lab: isolated tmux socket (-L fmdevinlab2), sandboxed FM_HOME/HOME/XDG_DATA_HOME,
+throwaway treehouse pool, real devin 3000.10.31 (Devin Max), real treehouse, real tmux.
+
+--- 1. spawn a devin crewmate with a chosen model ---
+$ bin/fm-spawn.sh devin-lab-a <project> --harness devin --mode local-only --yolo off --model swe-2-medium
+notice: devin-lab-a ships mode=local-only while the standing posture for project is no-mistakes - ...
+spawned devin-lab-a harness=devin kind=ship mode=local-only yolo=off window=firstmate:fm-devin-lab-a
+        worktree=/tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/1/project
+$ tmux display-message -p -t firstmate:fm-devin-lab-a '#{pane_current_command} | #{pane_current_path}'
+devin | /tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/1/project
+state/devin-lab-a.meta: harness=devin kind=ship model=swe-2-medium effort=default busy_gen=g1789833190...
+The pane's own footer reports the model back: "SWE-2 Medium".
+
+--- 2. busy/idle supervision across a real turn ---
+state/devin-lab-b.busy-state, sampled every 4s across the launch turn:
+  seq=2 state=busy source=devin-hook event=user-prompt-submit
+  seq=3 state=idle source=devin-hook event=stop
+$ bin/fm-crew-state.sh devin-lab-b   (mid-turn)  ->  state: working - source: pane - harness busy (devin-hook)
+
+--- 3. control-plane interrupt on a live turn ---
+$ bin/fm-control.sh devin-lab-b interrupt
+interrupt-delivered devin-lab-b harness=devin backend=tmux verified=agent-alive cancel=unconfirmed busy-record=closed
+busy-state: seq=5 state=idle source=fm-interrupt event=interrupt   (bound to the running incarnation's gen)
+pane:  * Canceled. What should Devin do?
+$ bin/fm-crew-state.sh devin-lab-b  ->  state: unknown - source: none - no current-state source available
+
+--- 4. adversarial: fm-send --key Escape must not forge idle ---
+BEFORE  seq=6 state=busy source=devin-hook event=user-prompt-submit
+$ bin/fm-send.sh devin-lab-b --key Escape        (mid-turn)
+AFTER   seq=6 state=busy source=devin-hook event=user-prompt-submit   (UNCHANGED - no forged idle)
+pane:  * Canceled. What should Devin do?
+$ bin/fm-crew-state.sh devin-lab-b
+state: unknown - source: pane - harness state unavailable (unknown devin-turn-contradicted)
+
+--- 5. adversarial: unlisted model, validated against the real listing ---
+$ bin/fm-spawn.sh devin-lab-x <project> --harness devin --mode local-only --yolo off --model swe-9-imaginary
+error: devin model 'swe-9-imaginary' is not listed by 'devin models list'; choose a listed model id, family id, or alias, or omit --model
+exit=1; no state/devin-lab-x.* written, no tmux window created
+(separately observed: when `devin models list` did not answer within 20s the spawn printed
+ "notice: 'devin models list' did not answer within 20s; launching with --model 'swe-2-medium' unvalidated"
+ and launched - the documented soft-fail, not a refusal)
+
+--- 6. adversarial: devin secondmate refused ---
+$ bin/fm-spawn.sh devin-lab-sm --harness devin --secondmate
+error: devin is a verified crewmate/scout adapter only and cannot run a secondmate; it has no primary
+       supervision protocol. Select a harness verified for secondmates.
+exit=1
+
+--- 7. control-plane exit of a BUSY worker ---
+before: seq=2 state=busy source=devin-hook event=user-prompt-submit ; crew-state: working
+$ bin/fm-control.sh devin-lab-c exit
+stopped devin-lab-c harness=devin backend=tmux endpoint=firstmate:fm-devin-lab-c worktree=.../3/project
+after:  window still present; pane_current_command=bash, still in the worktree
+        state/devin-lab-c.busy-state is GONE (the incarnation's record was retired, no stale busy)
+$ bin/fm-crew-state.sh devin-lab-c -> state: unknown - source: pane - harness state unavailable (unknown missing)
+
+--- 8. control-plane relaunch, happy path (two live samples, both OK) ---
+$ bin/fm-control.sh devin-lab-c relaunch --note "retry 2 after the gate failure"       (13.6s)
+relaunched devin-lab-c harness=devin from=devin model=swe-2-medium effort=default backend=tmux
+  endpoint=firstmate:fm-devin-lab-c worktree=.../3/project
+$ bin/fm-control.sh devin-lab-d relaunch --note "retry on the preserved endpoint"
+relaunched devin-lab-d ... endpoint=firstmate:fm-devin-lab-d worktree=.../4/project
+Both replaced the worker in the SAME endpoint and worktree, with a NEW busy generation, and
+bin/fm-crew-state.sh then read "working - source: pane - harness busy (devin-hook)".
+
+--- 9. adversarial: a relaunch whose readiness gate expires (the round-1 no-go) ---
+See devin-relaunch-endpoint-preserved.txt. Summary: the adopted endpoint survives, the replacement
+devin is alive in it, and the retried relaunch succeeds into that same endpoint.
+
+--- 10. guard: a FRESH spawn whose readiness gate expires still closes the endpoint it CREATED ---
+$ FM_DEVIN_READY_POLLS=2 bin/fm-spawn.sh devin-lab-e <project> --harness devin ...
+error: devin did not start its session in the pre-trusted worktree in window firstmate:fm-devin-lab-e
+after: fm-devin-lab-e is absent from tmux list-windows, and no devin process for it survives.

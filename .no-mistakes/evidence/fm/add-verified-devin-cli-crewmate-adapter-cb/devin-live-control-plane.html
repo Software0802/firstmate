@@ -1,0 +1,291 @@
+<!doctype html><meta charset="utf-8">
+<title>Live Devin crewmate - firstmate control plane</title>
+<style>body{background:#16181d;color:#d3d7cf;font-family:ui-sans-serif,system-ui,sans-serif;margin:24px auto;max-width:940px;padding:0 16px}
+h1{font-size:19px}h2{font-size:14px;color:#8ae234;margin-top:28px;font-weight:600}
+pre.term{background:#0b0d10;border:1px solid #2b303b;border-radius:6px;padding:12px;overflow-x:auto;
+ font-family:ui-monospace,"DejaVu Sans Mono",monospace;font-size:12.5px;line-height:1.32;white-space:pre}
+pre.note{background:#101820;border-left:3px solid #729fcf;padding:8px 12px;font-family:ui-monospace,monospace;font-size:12px;color:#9fb6cf;white-space:pre-wrap;border-radius:0 4px 4px 0}
+p{font-size:13px;color:#9aa4b2}code{color:#d7d7af}</style>
+<h1>Live Devin crewmate: real tmux panes, real Devin CLI, firstmate control plane</h1>
+<p>Every pane below was captured from the task's own tmux window during this test run: isolated tmux socket, sandboxed <code>FM_HOME</code>/<code>HOME</code>/<code>XDG_DATA_HOME</code>, throwaway treehouse pool, real <code>devin 3000.10.31</code> (Devin Max) on model <code>swe-2-medium</code>.</p>
+<h2>1. Spawn: a devin crewmate lands in its own treehouse worktree on the chosen model</h2>
+<pre class="term">
+ <span style="color:#444444">│</span>     "landed": 0,
+ <span style="color:#444444">│</span>     "endpoints": 1
+ <span style="color:#444444">│</span>   },
+ <span style="color:#444444">│</span>   "omitted": []
+ <span style="color:#444444">│</span> }
+ <span style="color:#444444">└</span> <span style="color:#808080">Exited with code 0</span>
+
+ Acknowledged. Status report:
+
+   <span style="color:#808080">• </span><span style="font-weight:700">Worktree</span>: <span style="color:#d7d7af;background:#262626"> /tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/1/project
+</span>    — contains only <span style="color:#d7d7af;background:#262626"> README.md </span> and a <span style="color:#d7d7af;background:#262626"> .git </span> file.
+   <span style="color:#808080">• </span><span style="font-weight:700">Steering inbox</span>: <span style="color:#d7d7af;background:#262626"> /tmp/fm-devin-lab2/home/state/devin-lab-a.inbox </span> does not
+   exist — no messages pending.
+   <span style="color:#808080">• </span><span style="font-weight:700">Note</span>: <span style="color:#d7d7af;background:#262626"> devin-lab-a.status </span> shows a stale "failed to start" verdict, but I'm
+   live in the worktree now.
+   <span style="color:#808080">• </span><span style="font-weight:700">Constraints confirmed</span>: staying in the worktree, no commits, no pushes.
+
+ Standing by for further instructions via the inbox.
+
+<span style="color:#444444">──────────────────────────────────────────────────────</span> <span style="color:#d7d7af">(bypass permissions on)</span> <span style="color:#444444">─
+</span>❭ <span style="color:#808080">Ask Devin to build features, fix bugs, or work on your code</span>
+<span style="color:#444444">────────────────────────────────────────────────────────────────────────────────
+</span>SWE-2 Medium                                     <span style="color:#808080">Context: 14k / 262k tokens (5%)
+
+</span></pre>
+<pre class="note">$ bin/fm-spawn.sh devin-lab-a &lt;project&gt; --harness devin --mode local-only --yolo off --model swe-2-medium
+spawned devin-lab-a harness=devin kind=ship mode=local-only yolo=off window=firstmate:fm-devin-lab-a worktree=/tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/1/project
+
+$ tmux display-message -p -t firstmate:fm-devin-lab-a '#{pane_current_command} | #{pane_current_path}'
+devin | /tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/1/project
+
+state/devin-lab-a.meta (excerpt)   harness=devin  kind=ship  model=swe-2-medium  effort=default
+The pane's own footer independently reports the chosen model: SWE-2 Medium.</pre>
+<h2>2. Mid-turn: devin renders its busy token and firstmate reads the crew as working</h2>
+<pre class="term">
+ <span style="color:#444444">│</span> drwxrwxr-x 3 luzhiku luzhiku 4096 Sep 20 00:54 .
+ <span style="color:#444444">│</span> drwxrwxr-x 3 luzhiku luzhiku 4096 Sep 20 00:54 ..
+ <span style="color:#444444">│</span> -rw------- 1 luzhiku luzhiku  167 Sep 20 00:54 001.msg
+ <span style="color:#444444">│</span> drwxrwxr-x 2 luzhiku luzhiku 4096 Sep 20 00:54 handled
+ <span style="color:#444444">└</span> <span style="color:#808080">Exited with code 0</span>
+
+ <span style="color:#5fd787">⏺ </span>Read <span style="color:#808080">/tmp/fm-devin-lab2/home/state/devin-lab-b.inbox/001.msg</span>
+
+ <span style="color:#5fd787">⏺ </span>Ran command
+ <span style="color:#444444">│</span> $ <span style="color:#d7d7af">mv</span> /tmp/fm-devin-lab2/home/state/devin-lab-b.inbox/001.msg /tmp/fm-devin-
+ <span style="color:#444444">│</span>   lab2/home/state/devin-lab-b.inbox/handled/ <span style="color:#ffffff">&amp;&amp;</span> <span style="color:#d7d7af">ls</span> /tmp/fm-devin-lab2/home/
+ <span style="color:#444444">│</span>   state/devin-lab-b.inbox/ /tmp/fm-devin-lab2/home/state/devin-lab-b.inbox/
+ <span style="color:#444444">│</span>   handled/
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/home/state/devin-lab-b.inbox/:
+ <span style="color:#444444">│</span> handled
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/home/state/devin-lab-b.inbox/handled/:
+ <span style="color:#444444">│</span> 001.msg
+ <span style="color:#444444">└</span> <span style="color:#808080">Exited with code 0</span>
+
+<span style="color:#afd787">⡆⠀</span><span style="color:#808080"> Thinking · 14s (esc twice to interrupt)</span>
+<span style="color:#444444">──────────────────────────────────────────────────────</span> <span style="color:#d7d7af">(bypass permissions on)</span> <span style="color:#444444">─
+</span>❭ <span style="color:#808080">Guide Devin while it works</span>
+<span style="color:#444444">────────────────────────────────────────────────────────────────────────────────
+</span>SWE-2 Medium                                     <span style="color:#808080">Context: 16k / 262k tokens (6%)
+</span></pre>
+<pre class="note">$ bin/fm-send.sh devin-lab-b "Write a detailed 2500-word essay on the history of lighthouses..."
+state/devin-lab-b.busy-state   v1 gen=g1789833245.3435981.22678 seq=4 state=busy source=devin-hook event=user-prompt-submit
+
+$ bin/fm-crew-state.sh devin-lab-b
+state: working - source: pane - harness busy (devin-hook)
+
+The same record is written idle by devin's own Stop hook when a turn ends normally:
+  seq=2 state=busy source=devin-hook event=user-prompt-submit  ->  seq=3 state=idle source=devin-hook event=stop</pre>
+<h2>3. Control-plane interrupt: the turn is cancelled and the busy record is closed</h2>
+<pre class="term">
+ <span style="color:#444444">│</span> drwxrwxr-x 3 luzhiku luzhiku 4096 Sep 20 00:54 ..
+ <span style="color:#444444">│</span> -rw------- 1 luzhiku luzhiku  167 Sep 20 00:54 001.msg
+ <span style="color:#444444">│</span> drwxrwxr-x 2 luzhiku luzhiku 4096 Sep 20 00:54 handled
+ <span style="color:#444444">└</span> <span style="color:#808080">Exited with code 0</span>
+
+ <span style="color:#5fd787">⏺ </span>Read <span style="color:#808080">/tmp/fm-devin-lab2/home/state/devin-lab-b.inbox/001.msg</span>
+
+ <span style="color:#5fd787">⏺ </span>Ran command
+ <span style="color:#444444">│</span> $ <span style="color:#d7d7af">mv</span> /tmp/fm-devin-lab2/home/state/devin-lab-b.inbox/001.msg /tmp/fm-devin-
+ <span style="color:#444444">│</span>   lab2/home/state/devin-lab-b.inbox/handled/ <span style="color:#ffffff">&amp;&amp;</span> <span style="color:#d7d7af">ls</span> /tmp/fm-devin-lab2/home/
+ <span style="color:#444444">│</span>   state/devin-lab-b.inbox/ /tmp/fm-devin-lab2/home/state/devin-lab-b.inbox/
+ <span style="color:#444444">│</span>   handled/
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/home/state/devin-lab-b.inbox/:
+ <span style="color:#444444">│</span> handled
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/home/state/devin-lab-b.inbox/handled/:
+ <span style="color:#444444">│</span> 001.msg
+ <span style="color:#444444">└</span> <span style="color:#808080">Exited with code 0</span>
+
+ <span style="color:#808080">✱</span> <span style="color:#808080">Canceled. What should Devin do?</span>
+
+<span style="color:#444444">──────────────────────────────────────────────────────</span> <span style="color:#d7d7af">(bypass permissions on)</span> <span style="color:#444444">─
+</span>❭ <span style="color:#808080">Ask Devin to build features, fix bugs, or work on your code</span>
+<span style="color:#444444">────────────────────────────────────────────────────────────────────────────────
+</span>SWE-2 Medium                                     <span style="color:#808080">Context: 16k / 262k tokens (6%)
+</span></pre>
+<pre class="note">$ bin/fm-control.sh devin-lab-b interrupt
+interrupt-delivered devin-lab-b harness=devin backend=tmux verified=agent-alive cancel=unconfirmed busy-record=closed
+
+state/devin-lab-b.busy-state   v1 gen=g1789833245.3435981.22678 seq=5 state=idle source=fm-interrupt event=interrupt
+  (bound to the SAME busy generation the running incarnation was armed at)
+
+$ bin/fm-crew-state.sh devin-lab-b
+state: unknown - source: none - no current-state source available    (no longer reported working)</pre>
+<h2>4. Adversarial: <code>fm-send --key Escape</code> cancels but must NOT forge idle</h2>
+<pre class="term">
+
+<span style="color:#ffffff;background:#262626">❭</span><span style="background:#262626"> </span><span style="color:#ffffff;background:#262626">: Firstmate instruction waiting: list '/tmp/fm-devin-lab2/home/state/devin-</span><span style="background:#262626">
+  </span><span style="color:#ffffff;background:#262626">lab-b.inbox'/*.msg and, in numeric order, read and act on each, then mv each </span><span style="background:#262626">
+  </span><span style="color:#ffffff;background:#262626">handled file to '/tmp/fm-devin-lab2/home/state/devin-lab-b.inbox'/handled/.</span><span style="background:#262626">
+
+</span> <span style="color:#5fd787">⏺ </span>Ran command
+ <span style="color:#444444">│</span> $ <span style="color:#d7d7af">ls</span> /tmp/fm-devin-lab2/home/state/devin-lab-b.inbox/*.msg <span style="color:#afd7af">2</span><span style="color:#ffffff">&gt;</span>/dev/null; <span style="color:#d7d7af">echo</span>
+ <span style="color:#444444">│</span>   <span style="color:#d78787">"---"</span>; <span style="color:#d787af">for</span> <span style="color:#afd7ff">f</span> <span style="color:#d787af">in</span> /tmp/fm-devin-lab2/home/state/devin-lab-b.inbox/*.msg; <span style="color:#d787af">do</span> [
+ <span style="color:#444444">│</span>   -f <span style="color:#d78787">"</span><span style="color:#ffffff">$</span><span style="color:#afd7ff">f</span><span style="color:#d78787">"</span> ] <span style="color:#ffffff">&amp;&amp;</span> <span style="color:#d7d7af">echo</span> <span style="color:#d78787">"== </span><span style="color:#ffffff">$</span><span style="color:#afd7ff">f</span><span style="color:#d78787">"</span> <span style="color:#ffffff">&amp;&amp;</span> <span style="color:#d7d7af">cat</span> <span style="color:#d78787">"</span><span style="color:#ffffff">$</span><span style="color:#afd7ff">f</span><span style="color:#d78787">"</span>; <span style="color:#d787af">done</span>
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/home/state/devin-lab-b.inbox/002.msg
+ <span style="color:#444444">│</span> ---
+ <span style="color:#444444">│</span> == /tmp/fm-devin-lab2/home/state/devin-lab-b.inbox/002.msg
+ <span style="color:#444444">│</span> schema=fm-task-inbox.v1
+ <span style="color:#444444">│</span> at=2026-09-19T15:54:58Z
+ <span style="color:#444444">│</span> --
+ <span style="color:#444444">│</span> Write a detailed 2500-word essay on the history of canals. Print it directly
+ <span style="color:#444444">└</span> <span style="color:#808080">Exited with code 0</span>
+
+ <span style="color:#808080">✱</span> <span style="color:#808080">Canceled. What should Devin do?</span>
+
+<span style="color:#444444">──────────────────────────────────────────────────────</span> <span style="color:#d7d7af">(bypass permissions on)</span> <span style="color:#444444">─
+</span>❭ <span style="color:#808080">Ask Devin to build features, fix bugs, or work on your code</span>
+<span style="color:#444444">────────────────────────────────────────────────────────────────────────────────
+</span>SWE-2 Medium                                     <span style="color:#808080">Context: 16k / 262k tokens (6%)
+</span></pre>
+<pre class="note">The data plane reads no pane, so it must never claim the turn stopped.
+
+BEFORE  v1 gen=g1789833245.3435981.22678 seq=6 state=busy source=devin-hook event=user-prompt-submit
+$ bin/fm-send.sh devin-lab-b --key Escape
+AFTER   v1 gen=g1789833245.3435981.22678 seq=6 state=busy source=devin-hook event=user-prompt-submit   (UNCHANGED)
+
+$ bin/fm-crew-state.sh devin-lab-b
+state: unknown - source: pane - harness state unavailable (unknown devin-turn-contradicted)
+
+The pane shows the turn really was cancelled, and the record was still left exactly as devin's own
+hooks wrote it: a stale busy, never a forged idle.</pre>
+<h2>5. Adversarial (the fix): a relaunch whose readiness gate fails keeps the endpoint it adopted</h2>
+<pre class="note">
+=== S9: a relaunch whose devin readiness gate expires must keep the endpoint it ADOPTED ===
+
+--- before: the task's endpoint and its live worker ---
+$ tmux list-windows -t firstmate -F '#{window_name}'
+bash
+fm-devin-lab-a
+fm-devin-lab-b
+fm-devin-lab-c
+fm-devin-lab-d
+$ tmux display-message -p -t firstmate:fm-devin-lab-d '#{pane_current_command} | #{pane_current_path}'
+devin | /tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/4/project
+$ grep -E '^window=|^worktree=' state/devin-lab-d.meta
+window=firstmate:fm-devin-lab-d
+worktree=/tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/4/project
+
+--- the relaunch, with devin's readiness bound forced to expire (FM_DEVIN_READY_POLLS=2) ---
+$ bin/fm-control.sh devin-lab-d relaunch --note 'force the readiness gate to expire'
+error: devin did not start its session in the pre-trusted worktree in window firstmate:fm-devin-lab-d; inspect window firstmate:fm-devin-lab-d
+error: the replacement agent for devin-lab-d could not be launched on devin
+error: devin-lab-d was relaunched on devin but no running agent could be confirmed; its work is preserved at /tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/4/project
+exit=1 (the relaunch correctly reports it could not confirm a running agent)
+
+--- after: the adopted endpoint is STILL THERE (before this fix it was killed) ---
+$ tmux list-windows -t firstmate -F '#{window_name}'
+bash
+fm-devin-lab-a
+fm-devin-lab-b
+fm-devin-lab-c
+fm-devin-lab-d
+$ tmux display-message -p -t firstmate:fm-devin-lab-d '#{pane_current_command} | #{pane_current_path}'
+devin | /tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/4/project
+$ grep -E '^window=|^worktree=' state/devin-lab-d.meta
+window=firstmate:fm-devin-lab-d
+worktree=/tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/4/project
+</pre>
+<p>The preserved endpoint, captured after that failed relaunch: the replacement <code>devin</code> is alive in the task&#39;s own window and worktree, it had simply not written its session sidecar inside the forced 2-poll bound.</p>
+<pre class="term">
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/xdg-data/devin/cli/_versions/3000.10.31/share/devin/docs/r
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/xdg-data/devin/cli/_versions/3000.10.31/share/devin/docs/s
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/xdg-data/devin/cli/_versions/3000.10.31/share/man/man1/dev
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/xdg-data/devin/cli/_versions/3000.10.31/share/man/man1/dev
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/xdg-data/devin/cli/_versions/3000.10.31/bin/devin
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/xdg-data/devin/cli/sessions.db
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/xdg-data/devin/cli/transcripts/booming-jargon.json
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/xdg-data/devin/cli/transcripts/cotton-nautilus.json
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/xdg-data/devin/cli/transcripts/tidal-mouth.json
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/xdg-data/devin/cli/transcripts/paper-buzzard.json
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/xdg-data/devin/cli/transcripts/occipital-strand.json
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/xdg-data/devin/cli/transcripts/bottlenose-breakfast.json
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/home/config:
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/notes:
+ <span style="color:#444444">│</span> s9.txt
+ <span style="color:#444444">│</span> /tmp/fm-devin-lab2/shim:
+ <span style="color:#444444">│</span> tmux
+ <span style="color:#444444">└</span> <span style="color:#808080">Exited with code 0</span>
+
+<span style="color:#87d7af">⣀⡀</span><span style="color:#808080"> Thinking · 28s (esc twice to interrupt)</span>
+<span style="color:#444444">──────────────────────────────────────────────────────</span> <span style="color:#d7d7af">(bypass permissions on)</span> <span style="color:#444444">─
+</span>❭ <span style="color:#808080">Guide Devin while it works</span>
+<span style="color:#444444">────────────────────────────────────────────────────────────────────────────────
+</span>SWE-2 Medium                                     <span style="color:#808080">Context: 15k / 262k tokens (5%)
+</span></pre>
+<pre class="note">
+=== S10 (guard): a FRESH spawn whose readiness gate expires must still close the endpoint it CREATED ===
+The relaunch carve-out must not weaken the orphan protection for a spawn that CREATED its endpoint.
+
+$ tmux list-windows -t firstmate -F '#{window_name}'   (before)
+bash
+fm-devin-lab-a
+fm-devin-lab-b
+fm-devin-lab-c
+fm-devin-lab-d
+
+$ FM_DEVIN_READY_POLLS=2 bin/fm-spawn.sh devin-lab-e &lt;project&gt; --harness devin --mode local-only --yolo off --model swe-2-medium
+error: devin did not start its session in the pre-trusted worktree in window firstmate:fm-devin-lab-e; inspect window firstmate:fm-devin-lab-e
+exit=1
+
+$ tmux list-windows -t firstmate -F '#{window_name}'   (after: fm-devin-lab-e was never left behind)
+bash
+fm-devin-lab-a
+fm-devin-lab-b
+fm-devin-lab-c
+fm-devin-lab-d
+
+$ ps -eo pid,args | grep -F devin-lab-e   (no half-started devin left running outside task control)
+(no process)
+</pre>
+<h2>6. The retried relaunch then replaces the worker in that same endpoint and worktree</h2>
+<pre class="term">
+<span style="background:#262626">
+  </span><span style="color:#ffffff;background:#262626">adversarial: force the readiness gate to expire</span><span style="background:#262626">
+
+  </span><span style="color:#ffffff;background:#262626">## Progress note (2026-09-19T15:56:32Z)</span><span style="background:#262626">
+
+  </span><span style="color:#ffffff;background:#262626">This task was relaunched. Continue from here; the local copy and every</span><span style="background:#262626">
+  </span><span style="color:#ffffff;background:#262626">uncommitted change are exactly as the previous worker left them.</span><span style="background:#262626">
+
+  </span><span style="color:#ffffff;background:#262626">First, check your instruction inbox: list /tmp/fm-devin-lab2/home/state/devin-
+</span><span style="background:#262626">  </span><span style="color:#ffffff;background:#262626">lab-c.inbox/*.msg, act on</span><span style="background:#262626">
+  </span><span style="color:#ffffff;background:#262626">each message in numeric order, then mv each handled file into</span><span style="background:#262626">
+  </span><span style="color:#ffffff;background:#262626">/tmp/fm-devin-lab2/home/state/devin-lab-c.inbox/handled/. A steer sent before
+</span><span style="background:#262626">  </span><span style="color:#ffffff;background:#262626">the relaunch survives there.</span><span style="background:#262626">
+
+  </span><span style="color:#ffffff;background:#262626">retry 2 after the gate failure</span><span style="background:#262626">
+
+</span><span style="color:#808080">Max · 0% remaining (resets in 16h 3m)</span>
+
+<span style="color:#d7af5f">⣄⠀</span><span style="color:#808080"> Thinking · 3s (esc twice to interrupt) · (30c · ctrl+o for details · alt+t to
+</span>  <span style="color:#808080">toggle)</span>
+<span style="color:#444444">──────────────────────────────────────────────────────</span> <span style="color:#d7d7af">(bypass permissions on)</span> <span style="color:#444444">─
+</span>❭ <span style="color:#808080">Guide Devin while it works</span>
+<span style="color:#444444">────────────────────────────────────────────────────────────────────────────────
+</span>SWE-2 Medium                       <span style="color:#808080">Use /help to see all available slash commands
+</span></pre>
+<pre class="note">$ bin/fm-control.sh devin-lab-d relaunch --note "retry on the preserved endpoint"
+relaunched devin-lab-d harness=devin from=devin model=swe-2-medium effort=default backend=tmux
+  endpoint=firstmate:fm-devin-lab-d worktree=/tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/4/project
+
+state/devin-lab-d.busy-state   v1 gen=g1789833629.3610631.9618 seq=2 state=busy source=devin-hook event=user-prompt-submit
+$ bin/fm-crew-state.sh devin-lab-d
+state: working - source: pane - harness busy (devin-hook)
+
+Before this fix the failed relaunch had destroyed the window, and every later control action answered
+"task ...'s recorded endpoint is gone ... reconcile the task before any further control action".
+(Pane above captured on devin-lab-c, the same relaunch driven on a second task.)</pre>
+<h2>7. Control-plane exit of a BUSY worker: endpoint preserved, busy record retired</h2>
+<pre class="note">$ cat state/devin-lab-c.busy-state          v1 ... seq=2 state=busy source=devin-hook event=user-prompt-submit
+$ bin/fm-crew-state.sh devin-lab-c          state: working - source: pane - harness busy (devin-hook)
+
+$ bin/fm-control.sh devin-lab-c exit
+stopped devin-lab-c harness=devin backend=tmux endpoint=firstmate:fm-devin-lab-c worktree=.../3/project
+
+$ tmux display-message -p -t firstmate:fm-devin-lab-c '#{pane_current_command} | #{pane_current_path}'
+bash | /tmp/fm-devin-lab2/user-home/.treehouse/project-45a9f3/3/project   (endpoint preserved, shell back in the worktree)
+$ cat state/devin-lab-c.busy-state          (record retired entirely - no stale busy survives the exit)
+$ bin/fm-crew-state.sh devin-lab-c          state: unknown - source: pane - harness state unavailable (unknown missing)</pre>

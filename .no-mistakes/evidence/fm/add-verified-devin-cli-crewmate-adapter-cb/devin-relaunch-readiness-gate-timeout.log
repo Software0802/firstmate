@@ -1,0 +1,37 @@
+Failed devin relaunch, 2026-09-19 15:42 UTC: the replacement devin never wrote its
+SessionStart sidecar inside fm-spawn devin_wait_for_session bound (60 polls x 0.5s = 30s),
+so the gate failed and rovo_endpoint_cleanup killed the tmux window the relaunch had adopted.
+
+devin own log for that launch (it ends where fm-spawn killed the pane):
+
+2026-09-19T15:42:20.228583Z  INFO chisel: elapsed_since_main_ms=19 logging initialized
+2026-09-19T15:42:20.228683Z  INFO chisel: log_file=/tmp/fm-devin-lab/home/.local/share/devin/cli/logs/devin_20260920-004220_3246479.log writing logs to file
+2026-09-19T15:42:20.228909Z  INFO init_cli: chisel: version=3000.10.31 commit=b98cc431 os=linux arch=x86_64 binary=devin startup
+2026-09-19T15:42:20.229106Z  INFO init_cli:load_credentials: chisel: close time.busy=82.2µs time.idle=51.9µs
+2026-09-19T15:42:20.229414Z  INFO log_maintenance: chisel::log_maintenance: close time.busy=448µs time.idle=6.24µs
+2026-09-19T15:42:20.234435Z  INFO init_cli:analytics_new: chisel: close time.busy=68.7µs time.idle=2.02µs
+2026-09-19T15:42:20.234506Z  INFO init_cli: chisel: close time.busy=5.57ms time.idle=53.6µs
+2026-09-19T15:42:20.235657Z  INFO chisel: CLI init complete; dispatching command
+2026-09-19T15:42:20.289045Z  INFO chisel_api::telemetry::unleash_sampling: unleash flags evaluated: cli-smart-mode=true cli-user-edit-awareness=true cli-symlink-guard-killswitch=false cli-local-fusion-killswitch=false enable-devin-cli-cloud-compaction-schedule=true enable-devin-cli-swe2-self-compaction=false (user_id=true team_id=true)
+2026-09-19T15:42:21.338292Z  INFO chisel_api::telemetry::manager::cache: Saved telemetry config cache at /tmp/fm-devin-lab/home/.cache/devin/telemetry_state.json
+2026-09-19T15:42:21.723654Z  INFO run_repl_mode:setup: chisel_cloud_bridge::handoff: [handoff] resolve_org_id: checking project configs
+2026-09-19T15:42:21.723879Z  INFO run_repl_mode:setup: chisel_cloud_bridge::handoff: count=0 [handoff] resolve_org_id: loaded project configs
+2026-09-19T15:42:21.723935Z  INFO run_repl_mode:setup: chisel_cloud_bridge::handoff: [handoff] resolve_org_id: no project config org_id, checking user config
+2026-09-19T15:42:21.724483Z  INFO run_repl_mode:setup: chisel_cloud_bridge::handoff: [handoff] resolve_org_id: no org_id found anywhere
+2026-09-19T15:42:21.724748Z  INFO run_repl_mode:setup: chisel_cloud_bridge::handoff: api_host=api.devin.ai [handoff] connect_acp: connecting
+2026-09-19T15:42:30.116822Z  INFO run_repl_mode:setup: chisel_cloud_bridge::handoff: attempt=0 [handoff] connect_acp: connected
+2026-09-19T15:42:30.117089Z  INFO run_repl_mode:setup: chisel_cloud_bridge::handoff: [handoff] connect_acp: initialize sent
+2026-09-19T15:42:30.568226Z  INFO run_repl_mode:setup: chisel_cloud_bridge::handoff: [handoff] connect_acp: initialize response received
+2026-09-19T15:42:30.568452Z  INFO run_repl_mode:setup: chisel_cloud_bridge::handoff: [handoff] connect_acp: handshake complete
+2026-09-19T15:42:30.568683Z  INFO run_repl_mode:setup: chisel_cloud_bridge::handoff: [handoff] acp_session_new: sent session/new
+
+---
+For comparison, the two launches that made it: parent connects and forks its local ACP
+server within ~6s.
+
+2026-09-19T15:43:21.820737Z  INFO init_cli: chisel: version=3000.10.31 commit=b98cc431 os=linux arch=x86_64 binary=devin startup
+2026-09-19T15:43:23.942041Z  INFO run_repl_mode:setup: chisel_cloud_bridge::handoff: api_host=api.devin.ai [handoff] connect_acp: connecting
+2026-09-19T15:43:25.617130Z  INFO run_repl_mode:setup: chisel_cloud_bridge::handoff: attempt=0 [handoff] connect_acp: connected
+2026-09-19T15:43:25.758526Z  INFO run_repl_mode:setup: chisel_cloud_bridge::handoff: [handoff] acp_session_new: sent session/new
+2026-09-19T15:43:27.998030Z  INFO chisel_cloud_bridge::handoff: api_host=api.devin.ai [handoff] connect_acp: connecting
+2026-09-19T15:43:29.675437Z  INFO chisel_cloud_bridge::handoff: attempt=0 [handoff] connect_acp: connected
