@@ -4066,7 +4066,11 @@ EOF
     if [ "$RAW_LAUNCH" -eq 0 ]; then
       # Semantic busy-state hooks (bin/fm-busy-lib.sh): UserPromptSubmit opens
       # a turn; Stop (normal completion) and SessionEnd (process shutdown)
-      # close it, so an abnormal end can never leave a stale busy record.
+      # close it. Those are the only closes devin's hook vocabulary offers:
+      # it has no StopFailure equivalent, so a turn that dies on an API error
+      # closes nothing here, and bin/fm-busy-lib.sh corroborates an open devin
+      # record against devin's rendered composer for exactly that gap
+      # (fm_busy_devin_turn_contradicted).
       # Verified live on devin 3000.10.31 across three turns in one interactive
       # pane: SessionStart once, UserPromptSubmit once per prompt, Stop once per
       # COMPLETED turn, SessionEnd once on /exit with reason prompt_input_exit.

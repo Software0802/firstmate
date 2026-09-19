@@ -265,6 +265,79 @@ test_devin_classify_reads_its_hook_record() {
   pass "fm-busy-lib: devin's hook triple opens and closes its own record"
 }
 
+# devin's hook vocabulary carries no StopFailure equivalent, so a turn that
+# dies on an API error fires nothing after its opening UserPromptSubmit.
+# Reproduced live on devin 3000.10.31: a `Quota exhausted` turn left
+# `state=busy source=devin-hook event=user-prompt-submit` standing while the
+# worker sat at an empty composer, and every supervisor - Herdr included -
+# kept reading a phantom working worker, because only a LATER turn's Stop
+# could close it and an abandoned worker never runs one. The read-side
+# corroboration downgrades that record to unknown, never to idle.
+test_devin_api_error_turn_is_not_busy_forever() {
+  local statedir gen quota_pane running_pane typed_pane got
+  statedir="$TMP_ROOT/api-error"; mkdir -p "$statedir"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$statedir" devin-quota-1) \
+    || fail "could not arm a devin busy incarnation"
+  "$ROOT/bin/fm-busy-event.sh" apply "$statedir" devin-quota-1 busy \
+    --gen "$gen" --source devin-hook --event user-prompt-submit >/dev/null \
+    || fail "a devin UserPromptSubmit event must be accepted"
+  # The captured pane after the quota rejection: no status row, the error
+  # banner, and the idle composer placeholder back on the composer row.
+  quota_pane=$(printf '%s\n' \
+    '  Reply with exactly the word DEVIN_MODEL_OK and nothing else, then stop and wait.' \
+    ' ⚠︎ Quota exhausted' \
+    '   Your weekly usage quota has been exhausted. Visit https://app.devin.ai/settings/usage' \
+    'Max · 0% remaining (resets in 18h 16m)' \
+    '───────────────────────────────────── (bypass permissions on) ─' \
+    '❭ Ask Devin to build features, fix bugs, or work on your code' \
+    '───────────────────────────────────────────────────────────────' \
+    'Kimi K3 Max                           See all keyboard shortcuts: /shortcuts')
+  got=$(fm_busy_classify tmux fake:win devin devin-quota-1 "$statedir" "$quota_pane")
+  [ "$got" = "unknown devin-turn-contradicted" ] \
+    || fail "an API-error turn must stop reporting busy, got '$got'"
+  # A turn that really is running keeps its record: the rendered in-flight
+  # token is proof and always wins, and the mid-turn placeholder differs.
+  running_pane=$(printf '%s\n' \
+    '⢠⡀ Running tools · 5s (esc twice to interrupt)' \
+    '───────────────────────────────────── (bypass permissions on) ─' \
+    '❭ Guide Devin while it works' \
+    '───────────────────────────────────────────────────────────────')
+  got=$(fm_busy_classify tmux fake:win devin devin-quota-1 "$statedir" "$running_pane")
+  [ "$got" = "busy devin-hook" ] \
+    || fail "a running devin turn must stay busy, got '$got'"
+  # Absent evidence is not evidence: a pane captured mid-repaint (devin blanks
+  # it, see tests/fm-devin-signals-live-e2e.test.sh) shows neither signal, and
+  # a composer holding typed text shows no placeholder. Both keep the record.
+  got=$(fm_busy_classify tmux fake:win devin devin-quota-1 "$statedir" "$(printf '\n\n')")
+  [ "$got" = "busy devin-hook" ] \
+    || fail "a blank repaint frame must never contradict the record, got '$got'"
+  typed_pane=$(printf '%s\n' \
+    '───────────────────────────────────── (bypass permissions on) ─' \
+    '❭ fix findings 1 and 3' \
+    '───────────────────────────────────────────────────────────────')
+  got=$(fm_busy_classify tmux fake:win devin devin-quota-1 "$statedir" "$typed_pane")
+  [ "$got" = "busy devin-hook" ] \
+    || fail "a composer holding typed text must not contradict the record, got '$got'"
+  # The contradiction never manufactures idle, and it never reaches another
+  # adapter: the same pane under harness=claude keeps claude's own record.
+  "$ROOT/bin/fm-busy-event.sh" apply "$statedir" devin-quota-1 idle \
+    --gen "$gen" --source devin-hook --event stop >/dev/null \
+    || fail "a devin Stop event must be accepted"
+  got=$(fm_busy_classify tmux fake:win devin devin-quota-1 "$statedir" "$quota_pane")
+  [ "$got" = "idle devin-hook" ] \
+    || fail "a closed record is answered by the record, got '$got'"
+  statedir="$TMP_ROOT/api-error-claude"; mkdir -p "$statedir"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$statedir" claude-case-1) \
+    || fail "could not arm a claude busy incarnation"
+  "$ROOT/bin/fm-busy-event.sh" apply "$statedir" claude-case-1 busy \
+    --gen "$gen" --source claude-hook --event user-prompt-submit >/dev/null \
+    || fail "a claude UserPromptSubmit event must be accepted"
+  got=$(fm_busy_classify tmux fake:win claude claude-case-1 "$statedir" "$quota_pane")
+  [ "$got" = "busy claude-hook" ] \
+    || fail "devin's corroboration must never reach another adapter, got '$got'"
+  pass "fm-busy-lib: an API-error devin turn stops reporting busy, a live one does not"
+}
+
 test_devin_busy_signatures_are_harness_scoped() {
   printf '⢠⡀ Running tools · 5s (esc twice to interrupt)\n' | fm_busy_lines_match devin \
     || fail "harness=devin must match its own esc-twice token"
@@ -281,6 +354,40 @@ test_devin_busy_signatures_are_harness_scoped() {
   printf 'esc to interrupt\n' | fm_busy_lines_match devin \
     && fail "harness=devin must never borrow claude's token" || true
   pass "fm-composer-lib: devin delivery signatures never cross harnesses"
+}
+
+test_devin_idle_composer_is_empty_without_truecolor() {
+  local caps screen top bottom row got
+  # devin's real captured composer box. It draws ONE idle placeholder in two
+  # spellings, chosen by the TERMINAL: truecolor when the pane advertises
+  # COLORTERM and 256-colour when it does not (verified live, devin 3000.10.31,
+  # the same command in two tmux panes). Both must read `empty`, because that
+  # verdict is what lets the control plane type `/exit` and fm-send ring the
+  # doorbell; a tmux server started by a daemon, a cron job, or a non-truecolor
+  # ssh session carries no COLORTERM, and the 256-colour pane used to read
+  # `pending` and leave the worker unstoppable.
+  caps=$(printf 'styled=1\ncursor=1\n')
+  top='──────────────────────────────────── (bypass permissions on) ─'
+  bottom='───────────────────────────────────────────────────────────────'
+  for row in \
+    '\033[39m\xe2\x9d\xad \033[38;2;124;124;124mAsk Devin to build features, fix bugs, or work on your code\033[39m' \
+    '\033[39m\xe2\x9d\xad \033[38;5;244mAsk Devin to build features, fix bugs, or work on your code\033[39m'; do
+    screen=$(printf '%s\n%b\n%s\n' "$top" "$row" "$bottom")
+    got=$(fm_composer_classify_screen "$caps" "$screen" 1)
+    [ "$got" = empty ] \
+      || fail "an idle devin composer must read empty, got '$got' for: $row"
+  done
+  # Real typed input in the same box still reads pending in both panes: the
+  # 256-colour rule tests luminance on the standard palette, not "any 38;5".
+  for row in \
+    '\033[39m\xe2\x9d\xad \033[38;2;204;211;219mfix findings 1 and 3\033[39m' \
+    '\033[39m\xe2\x9d\xad \033[38;5;250mfix findings 1 and 3\033[39m'; do
+    screen=$(printf '%s\n%b\n%s\n' "$top" "$row" "$bottom")
+    got=$(fm_composer_classify_screen "$caps" "$screen" 1)
+    [ "$got" = pending ] \
+      || fail "typed devin composer input must read pending, got '$got' for: $row"
+  done
+  pass "fm-composer-lib: devin's idle composer reads empty with and without truecolor"
 }
 
 test_devin_tmux_names_the_native_binary_an_agent() {
@@ -812,7 +919,9 @@ test_devin_control_mechanics_are_the_verified_ones
 test_devin_relaunch_retires_its_own_wiring
 test_devin_busy_source_is_trusted_only_for_devin
 test_devin_classify_reads_its_hook_record
+test_devin_api_error_turn_is_not_busy_forever
 test_devin_busy_signatures_are_harness_scoped
+test_devin_idle_composer_is_empty_without_truecolor
 test_devin_tmux_names_the_native_binary_an_agent
 test_devin_trust_registers_the_resolved_worktree_path
 test_devin_trust_creates_a_missing_store

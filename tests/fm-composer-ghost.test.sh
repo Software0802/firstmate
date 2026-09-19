@@ -182,6 +182,41 @@ test_strip_ghost_keeps_muse_composer_colors() {
   pass "fm_tmux_strip_ghost keeps muse's near-threshold glyph and its typed text"
 }
 
+# --- A muted 256-COLOUR foreground is the same ghost, drawn for a pane that
+#     does not advertise truecolor -------------------------------------------
+
+# A harness picks the foreground spelling from the TERMINAL, not from its own
+# design: devin draws ONE placeholder as truecolor `38;2;124;124;124` when the
+# pane carries COLORTERM and as `38;5;244` when it does not (verified live,
+# devin 3000.10.31 in tmux 3.4, the same command in both panes). A tmux server
+# started by a daemon, a cron job, or a non-truecolor ssh session carries no
+# COLORTERM, so the 256-colour spelling is the ordinary case, not an exotic
+# one, and leaving it unstripped read an idle devin composer as pending.
+# Only the STANDARD palette is luminance-tested: entries 0-15 are theme
+# colours, so a harness that renders real text in one stays visible.
+test_strip_ghost_drops_dark_256colour_ghost() {
+  local out
+  # devin's own captured idle composer row, 256-colour spelling. Entry 244 is
+  # the grayscale ramp's 128,128,128, exactly the default cutoff, because the
+  # ramp rounds devin's 124-grey UP - the cutoff is inclusive for that reason.
+  out=$(printf '\033[39m\xe2\x9d\xad \033[38;5;244mAsk Devin to build features, fix bugs, or work on your code\033[39m\n' \
+        | fm_tmux_strip_ghost)
+  [ "$out" = "$(printf '\xe2\x9d\xad ')" ] || fail "dark 256-colour ghost not dropped: '$out'"
+  # The colon form drops too.
+  out=$(printf '\xe2\x9d\xaf \033[38:5:238mmuted\033[0m\n' | fm_tmux_strip_ghost)
+  [ "$out" = "$(printf '\xe2\x9d\xaf ')" ] || fail "dark colon-256 ghost not dropped: '$out'"
+  # A LIGHT ramp entry (250 is 218,218,218) is real text and must survive.
+  out=$(printf '\033[38;5;250mlight typed\033[0m\n' | fm_tmux_strip_ghost)
+  [ "$out" = "light typed" ] || fail "a light 256-colour foreground was stripped: '$out'"
+  # Theme colours (0-15) are never luminance-tested, whatever the palette.
+  out=$(printf '\033[38;5;0mtheme black typed\033[0m\n' | fm_tmux_strip_ghost)
+  [ "$out" = "theme black typed" ] || fail "a theme 256-colour foreground was stripped: '$out'"
+  # SGR 39 ends the run, exactly as it does for a truecolor foreground.
+  out=$(printf '\033[38;5;244mghost\033[39mREALTAIL\n' | fm_tmux_strip_ghost)
+  [ "$out" = "REALTAIL" ] || fail "ESC[39m did not end the 256-colour ghost run: '$out'"
+  pass "fm_tmux_strip_ghost drops a dark/muted 256-colour foreground (devin without COLORTERM)"
+}
+
 # --- fm_pane_input_pending: dim ghost is not pending ------------------------
 
 test_dim_ghost_only_composer_is_not_pending() {
@@ -686,6 +721,7 @@ test_strip_ghost_handles_combined_and_boundary_codes
 test_strip_ghost_keeps_colored_text_with_2_payloads
 test_strip_ghost_drops_dark_truecolor_ghost
 test_strip_ghost_keeps_muse_composer_colors
+test_strip_ghost_drops_dark_256colour_ghost
 test_dim_ghost_only_composer_is_not_pending
 test_dim_ghost_inside_bordered_composer_is_not_pending
 test_normal_text_still_pending

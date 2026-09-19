@@ -35,7 +35,10 @@
 #   gemini-hook      Gemini agent hooks (BeforeAgent opens; AfterAgent and
 #                    SessionEnd close)
 #   devin-hook       Devin CLI lifecycle hooks (UserPromptSubmit opens; Stop
-#                    and SessionEnd close)
+#                    and SessionEnd close). devin's hook vocabulary has no
+#                    StopFailure equivalent, so a turn that dies on an API
+#                    error closes nothing; an open devin record is therefore
+#                    corroborated at read time (see devin-turn-contradicted)
 #   codex-hook, codex-appserver  reserved: Codex, gated by
 #                    fm_busy_codex_semantic_source
 #   kimi-wire, kimi-hook  reserved: standalone Kimi, gated by fm_busy_kimi_verified
@@ -49,14 +52,16 @@
 #   fm-recovery      a documented recovery reset after relaunch
 # Classifier-only sources (never written into a record):
 #   endpoint-gone, herdr-native, grok-regex, rovo-regex, agy-regex, muse-session-log,
-#   cursor-transcript, missing, malformed, gen-mismatch, source-mismatch,
-#   kimi-unverified, codex-unverified, capture-failed, no-target
+#   cursor-transcript, devin-turn-contradicted, missing, malformed, gen-mismatch,
+#   source-mismatch, kimi-unverified, codex-unverified, capture-failed, no-target
 #
 # Classification (fm_busy_classify): busy | idle | unknown | dead, always
 # with the producing source as the second token. Precedence:
 #   1. dead endpoint (fm_busy_classify_live only) -> dead endpoint-gone
 #   2. standalone Kimi before verification       -> unknown kimi-unverified
-#   3. a valid, gen-matching, source-trusted record -> its state and source
+#   3. a valid, gen-matching, source-trusted record -> its state and source,
+#      except a BUSY devin record devin's own rendered surface contradicts,
+#      which reads unknown devin-turn-contradicted (see below)
 #   4. no record at all: herdr's native busy verdict is trusted as busy
 #      (generation state is sufficient for busy, not for idle), then the
 #      muse session-log and cursor transcript pull sources, then the
@@ -72,6 +77,13 @@
 # guards in bin/fm-composer-lib.sh match rendered footers for submit
 # acknowledgement and away-mode supervisor injection only; neither is a
 # recorded worker state source.
+#
+# devin is the one adapter whose rendered surface is read alongside a record,
+# and it still classifies nothing: it can only CONTRADICT an open turn record
+# into unknown, never produce busy and never produce idle. That narrow role
+# exists because devin's hooks cannot close a turn that died on an API error,
+# so its record alone can assert busy forever. See
+# fm_busy_devin_turn_contradicted for the two signals it requires.
 #
 # The muse pull source is semantic, not rendered: it folds muse's own durable
 # session event log. It has no writer, no arm, and no gen, because
@@ -874,12 +886,58 @@ fm_busy_agy_tail_busy() {
     | grep -qiE 'esc[[:space:]]+to[[:space:]]+cancel'
 }
 
+# fm_busy_devin_turn_contradicted: the devin-only read-side corroboration of an
+# OPEN turn record. Consumes the tail on stdin; 0 only when devin's own
+# rendered surface positively proves the pane is NOT in a turn.
+#
+# Why devin needs one at all: its hook vocabulary on 3000.10.31 is
+# PreToolUse, PostToolUse, PostCompaction, SessionStart, SessionEnd,
+# PermissionRequest, Stop, SubagentStop, UserPromptSubmit - there is no
+# StopFailure equivalent, so a turn that dies on an API error (a quota
+# rejection, a 5xx, a dropped connection) fires NOTHING after its opening
+# UserPromptSubmit. Verified live on devin 3000.10.31: a `Quota exhausted`
+# turn left `state=busy source=devin-hook event=user-prompt-submit` standing
+# with the worker back at an empty composer, and nothing but a LATER turn's
+# Stop could ever close it - which for an abandoned worker never comes. That
+# is a phantom working worker for every supervisor, Herdr included.
+#
+# Two signals, and BOTH are required, because this is proof of a contradiction
+# rather than a state source:
+#   - devin's verified in-flight token (`esc twice|again to interrupt`) is
+#     ABSENT. Its presence is proof the turn really is running and always wins.
+#   - devin's verified IDLE composer placeholder is rendered on the composer
+#     row. It is drawn only in an empty composer that is accepting input; a
+#     turn in flight draws `Guide Devin while it works` there instead, so this
+#     is positive evidence rather than the absence of evidence. A pane
+#     captured mid-repaint (devin blanks it, see the live signals guard) shows
+#     neither and therefore contradicts nothing.
+# bin/fm-composer-lib.sh owns both literals; the inline fallbacks keep this
+# library sourceable on its own, exactly as the Grok arm's do.
+#
+# The verdict this feeds is UNKNOWN, never idle: the redesign forbids rendered
+# text from proving a worker settled, and that rule is not relaxed here. An
+# unknown is an honest "this record can no longer be trusted", which is what
+# `unknown` means everywhere else in this contract.
+fm_busy_devin_turn_contradicted() {
+  local rendered
+  rendered=$(grep -v '^[[:space:]]*$' | tail -12)
+  if printf '%s\n' "$rendered" \
+     | grep -qiE "${FM_DELIVERY_DEVIN_BUSY_REGEX_DEFAULT:-esc[[:space:]]+(twice|again)[[:space:]]+to[[:space:]]+interrupt}"; then
+    return 1
+  fi
+  printf '%s\n' "$rendered" \
+    | grep -qE "^[[:space:]]*❭[[:space:]]+${FM_COMPOSER_DEVIN_IDLE_PLACEHOLDER:-Ask Devin to build features, fix bugs, or work on your code}"
+}
+
 # fm_busy_classify: semantic classification for a task whose endpoint the
 # caller has already established as present. Prints "<verdict> <source>":
 # busy|idle|unknown plus the producing source (see header). Never probes
-# process state. <tail40> is optional pre-captured plain output used only by
-# the grok, rovo, and agy arms; when absent each captures through
-# fm_backend_capture if available, else reports unknown capture-failed.
+# process state. <tail40> is optional pre-captured plain output used by the
+# grok, rovo, and agy arms and by the devin record corroboration; when absent
+# each captures through fm_backend_capture if available. A failed capture is
+# unknown capture-failed for the three regex arms, whose only source it is,
+# and leaves devin's record standing, because there the tail can only
+# contradict a record that already answered.
 fm_busy_classify() {  # <backend> <target> <harness> <id> <state-dir> [tail40]
   local backend=$1 target=$2 harness=$3 id=$4 state=$5 tail40=${6-}
   local out rc r_state r_source native log
@@ -921,6 +979,22 @@ fm_busy_classify() {  # <backend> <target> <harness> <id> <state-dir> [tail40]
     out=${out#* }
     r_source=${out%% *}
     if fm_busy_source_trusted "$harness" "$r_source"; then
+      # devin alone: an OPEN turn record its own hooks may never be able to
+      # close (no StopFailure equivalent exists, so an API-error turn end
+      # fires nothing) is corroborated against devin's rendered surface, and
+      # a positive contradiction downgrades it to unknown - never to idle.
+      # See fm_busy_devin_turn_contradicted. Absent or unreadable evidence
+      # leaves the record's own verdict standing.
+      if [ "$r_state" = busy ] && [ "$harness" = devin ]; then
+        if [ -z "$tail40" ] && command -v fm_backend_capture >/dev/null 2>&1; then
+          tail40=$(fm_backend_capture "$backend" "$target" 40 2>/dev/null) || tail40=''
+        fi
+        if [ -n "$tail40" ] \
+           && printf '%s' "$tail40" | fm_busy_devin_turn_contradicted; then
+          printf 'unknown devin-turn-contradicted'
+          return 0
+        fi
+      fi
       printf '%s %s' "$r_state" "$r_source"
     else
       printf 'unknown source-mismatch'

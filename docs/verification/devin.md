@@ -118,6 +118,7 @@ Whichever plane delivered the interrupt closes the record instead, writing `idle
 `bin/fm-control.sh <id> interrupt` is the sanctioned one and does it after the full sequence is delivered and verified, and so does `bin/fm-control.sh <id> exit` when it interrupts a busy task before typing the exit command, so an exit that then cannot prove the agent stopped still leaves no cancelled turn recorded busy.
 `bin/fm-send.sh --key Escape` does the same after delivering the sequence itself.
 Both read WHICH adapters need that close, and how many presses the sequence is, from `bin/fm-control-lib.sh` rather than deciding it twice.
+The interrupt is not the only end this triple cannot report; see "The one turn end devin cannot report" below for the API-error end, which no plane of firstmate's delivers and no devin hook fires for.
 That ordering is load-bearing for devin specifically, because a single Escape merely ARMS the second press and the turn carries on, so recording after one press would report idle for a running worker.
 `tests/fm-devin-signals-live-e2e.test.sh` asserts that gap is still open, so a release that closes it fails loudly instead of leaving an unverified assumption in place.
 
@@ -162,7 +163,19 @@ The live guard therefore waits for a painted pane before typing and drives its E
 
 The composer's prompt glyph is `❭` (U+276D, bytes `e2 9d ad`), with the idle placeholder `Ask Devin to build features, fix bugs, or work on your code` and the mid-turn placeholder `Guide Devin while it works`.
 devin parks its terminal cursor INSIDE the composer (`#{cursor_y}` on the composer row, `#{cursor_x}` 2, `#{cursor_flag}` 1), unlike cursor-agent.
-The placeholder is drawn as muted truecolor, `ESC[38;2;124;124;124m`, which `fm_composer_strip_ghost` removes, so a styled capture of an idle devin pane classifies `empty`:
+The placeholder is drawn muted, and devin picks its SPELLING from the terminal rather than from its own design.
+Two panes on the same host, running the same command in the same directory, captured the same row two ways:
+
+```
+COLORTERM=truecolor   ESC[39m❭ ESC[38;2;124;124;124mAsk Devin to build features, fix bugs, or work on your codeESC[39m
+no COLORTERM          ESC[39m❭ ESC[38;5;244mAsk Devin to build features, fix bugs, or work on your codeESC[39m
+```
+
+A tmux server started by a daemon, a cron job, or a non-truecolor ssh session is the second shape, and it is the default one on this host.
+`fm_composer_strip_ghost` originally luminance-tested truecolor only, so the second pane kept its placeholder, `fm_backend_composer_state` returned `pending` on a genuinely empty composer, and `bin/fm-control.sh <id> exit` refused with "composer visibly holds pending text" - the worker could not be stopped from that pane at all, and `bin/fm-send.sh` skipped its doorbell for the same reason.
+The stripper now luminance-tests both spellings, mapping palette entries 16-255 through the standard xterm cube and grayscale ramp and leaving the theme colours 0-15 alone.
+The cutoff is inclusive because the ramp rounds devin's 124-grey UP to entry 244, which is exactly `128,128,128`, exactly the default `FM_COMPOSER_GHOST_LUMA_MAX`.
+Both panes now classify the same:
 
 ```
 $ fm_backend_composer_state tmux firstmate:fm-devin-smoke-1
@@ -170,6 +183,18 @@ empty
 ```
 
 That verdict is what makes `fm-control.sh exit` usable: before the glyph and placeholders were registered it read `unknown` and the control plane refused to type `/exit` rather than risk concatenating onto unseen text.
+
+## The one turn end devin cannot report
+
+devin's hook vocabulary in the 3000.10.31 binary is `PreToolUse`, `PostToolUse`, `PostCompaction`, `SessionStart`, `SessionEnd`, `PermissionRequest`, `Stop`, `SubagentStop`, and `UserPromptSubmit`.
+There is no `StopFailure` equivalent, the hook that closes claude's record when a turn dies on an API error, so devin's `UserPromptSubmit` can open a turn that nothing ever closes.
+Reproduced live on an account whose paid allowance was drained: a `kimi-k3-max` launch submitted its brief, the turn ended on `Quota exhausted`, the worker returned to an empty composer, and `state/<id>.busy-state` still read `state=busy source=devin-hook event=user-prompt-submit` a minute later, so `bin/fm-crew-state.sh` kept reporting `state: working · source: pane · harness busy (devin-hook)` for an idle worker.
+Only a LATER turn's `Stop` could have closed it, which for an abandoned worker never comes.
+
+`fm_busy_devin_turn_contradicted` in `bin/fm-busy-lib.sh` closes that hole from the read side, and it is deliberately the narrowest thing that can: it never produces a verdict of its own, it only CONTRADICTS an already-open record, and the verdict it produces is `unknown devin-turn-contradicted`, never `idle`, because the approved redesign forbids rendered text from proving a worker settled.
+It requires both of devin's verified rendered facts at once - the in-flight token (`esc twice|again to interrupt`) absent AND the idle placeholder back on the composer row - so the two panes that could lie both fail closed: a turn in flight renders the token and the `Guide Devin while it works` placeholder instead, and a pane captured mid-repaint renders neither.
+An unreadable or empty capture leaves the record's own verdict standing.
+This is the same invariant the interrupt and exit record-closes hold, reached through the one path no plane of firstmate's ever touches.
 
 ## Interrupt: two Escapes, back to back
 
