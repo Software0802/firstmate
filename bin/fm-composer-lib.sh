@@ -79,7 +79,9 @@
 # genuine empty agent composer ONLY inside a bordered container. On a bare row
 # it is a dead-shell prompt and classifies `unknown` (never a safe injection
 # target). The AGENT glyphs `❯` (claude), `›` (codex), `⟩` (U+27E9, muse),
-# and `→` (U+2192, cursor) are a genuine empty agent composer either way.
+# `→` (U+2192, cursor), and `❭` (U+276D, devin) are a genuine empty agent
+# composer either way. Each is a distinct ornament codepoint no shell uses as
+# a prompt, which is what keeps that permission narrow.
 # Both glyph sets are declared
 # exactly once below; every decision reaches them through the declarations.
 #
@@ -331,7 +333,11 @@ fm_composer_strip_ghost() {
 # tmux agy endpoint reaches the submit core with no recorded harness, and its
 # bare `>` composer verdict is `unknown`, so the busy footer is the only
 # turn-started acknowledgement that path can read.
-FM_DELIVERY_BUSY_REGEX_DEFAULT='esc (to )?interrupt|Working(\.\.\.|…)|Ctrl\+c:cancel|ctrl\+c to stop|esc[[:space:]]+to[[:space:]]+cancel'
+# devin's `esc twice to interrupt` joins the union for the same reason the
+# others do; its own spelling is deliberately not covered by the generic
+# `esc (to )?interrupt` alternative, which stops at the literal word after
+# `esc `.
+FM_DELIVERY_BUSY_REGEX_DEFAULT='esc (to )?interrupt|Working(\.\.\.|…)|Ctrl\+c:cancel|ctrl\+c to stop|esc[[:space:]]+to[[:space:]]+cancel|esc[[:space:]]+(twice|again)[[:space:]]+to[[:space:]]+interrupt'
 FM_DELIVERY_CLAUDE_BUSY_REGEX_DEFAULT='esc to interrupt|…[[:space:]]+\([0-9]+[smh]'
 FM_DELIVERY_CODEX_BUSY_REGEX_DEFAULT='esc to interrupt'
 FM_DELIVERY_OPENCODE_BUSY_REGEX_DEFAULT='esc interrupt'
@@ -370,6 +376,16 @@ FM_DELIVERY_CURSOR_BUSY_REGEX_DEFAULT='ctrl\+c to stop'
 # acknowledgement. Delivery guard only; recorded worker state comes from the
 # agy-regex fold in bin/fm-busy-lib.sh.
 FM_DELIVERY_AGY_BUSY_REGEX_DEFAULT='esc[[:space:]]+to[[:space:]]+cancel'
+# devin (Devin CLI) renders a status row above its composer while a turn runs:
+# a braille spinner, a phase word, the elapsed seconds, and the parenthesized
+# `(esc twice to interrupt)` token (verified live, devin 3000.10.31). ONE
+# Escape rewrites that token to `esc again to interrupt` while the turn keeps
+# running, so both spellings must acknowledge or an interrupted-then-resumed
+# pane would read idle mid-turn. The phase word beside the spinner is
+# model-driven and varied between `Thinking` and `Running tools` within one
+# turn, so it is deliberately not matched. Delivery guard only; recorded worker
+# state comes from the devin-hook record in bin/fm-busy-lib.sh.
+FM_DELIVERY_DEVIN_BUSY_REGEX_DEFAULT='esc[[:space:]]+(twice|again)[[:space:]]+to[[:space:]]+interrupt'
 FM_DELIVERY_KIMI_BUSY_REGEX_DEFAULT='^[[:space:]]*(🌑|🌒|🌓|🌔|🌕|🌖|🌗|🌘)[[:space:]]+·[[:space:]]+'
 
 fm_busy_lines_match() {  # [harness]
@@ -388,6 +404,7 @@ fm_busy_lines_match() {  # [harness]
       agy) regex=$FM_DELIVERY_AGY_BUSY_REGEX_DEFAULT ;;
       kimi) regex=$FM_DELIVERY_KIMI_BUSY_REGEX_DEFAULT ;;
       cursor) regex=$FM_DELIVERY_CURSOR_BUSY_REGEX_DEFAULT ;;
+      devin) regex=$FM_DELIVERY_DEVIN_BUSY_REGEX_DEFAULT ;;
       '') regex=$FM_DELIVERY_BUSY_REGEX_DEFAULT ;;
       *)
         # A supplied harness must never borrow another harness's signature.
@@ -405,7 +422,7 @@ fm_busy_lines_match() {  # [harness]
 # a dead-shell prompt and must never read `empty`. Newline-separated and
 # consumed by `read` rather than word splitting, so `$`, `%`, and `#` stay
 # literal and no entry is ever exposed to pathname expansion.
-FM_COMPOSER_AGENT_PROMPT_GLYPHS=$(printf '%s\n' '❯' '›' '⟩' '→')
+FM_COMPOSER_AGENT_PROMPT_GLYPHS=$(printf '%s\n' '❯' '›' '⟩' '→' '❭')
 FM_COMPOSER_SHELL_PROMPT_GLYPHS=$(printf '%s\n' '>' '$' '%' '#')
 
 # The ONE fleet-wide idle-placeholder set: composer text a harness renders in
@@ -415,9 +432,12 @@ FM_COMPOSER_SHELL_PROMPT_GLYPHS=$(printf '%s\n' '>' '$' '%' '#')
 # hence the unanchored tail). cursor-agent renders
 # two, both anchored: `Plan, search, build anything` in a fresh session and
 # `Add a follow-up` once a turn has completed (verified live on cursor-agent
-# 2026.08.11-e8db854). FM_COMPOSER_IDLE_RE overrides for an unverified harness;
-# matching is case-insensitive.
-FM_COMPOSER_IDLE_RE_DEFAULT='^Type a message\.\.\.$|^Ask anything(\.\.\.|…)|^Plan, search, build anything$|^Add a follow-up$'
+# 2026.08.11-e8db854). devin renders two as well, both anchored:
+# `Ask Devin to build features, fix bugs, or work on your code` when its
+# composer is idle and `Guide Devin while it works` while a turn is in flight
+# (verified live, devin 3000.10.31). FM_COMPOSER_IDLE_RE overrides for an
+# unverified harness; matching is case-insensitive.
+FM_COMPOSER_IDLE_RE_DEFAULT='^Type a message\.\.\.$|^Ask anything(\.\.\.|…)|^Plan, search, build anything$|^Add a follow-up$|^Ask Devin to build features, fix bugs, or work on your code$|^Guide Devin while it works$'
 
 # Opencode draws a mode/model footer line INSIDE its left-bar composer
 # ("Build · GPT-5.5 Fast OpenAI · high"). It is composer furniture, not typed

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Detect the agent harness this process tree runs on.
-# Usage: fm-harness.sh                  print own harness: claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo|omp|agy|unknown
+# Usage: fm-harness.sh                  print own harness: claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo|omp|agy|devin|unknown
 #        fm-harness.sh crew             print the effective CREWMATE harness
 #                                        (config/crew-harness; "default" resolves to own)
 #        fm-harness.sh secondmate       print the harness the PRIMARY uses to launch
@@ -133,7 +133,7 @@ harness_marker() {
   # identified, and any rule that must be RELIABLE under grok has to test the hook
   # markers too (see .claude/settings.json Stop entries, docs/turnend-guard.md).
   [ "${GROK_AGENT:-}" = "1" ] && { echo grok; return; }
-  # codex, opencode, kimi, muse, and agy publish no harness-identity marker at all, so
+  # codex, opencode, kimi, muse, agy, and devin publish no harness-identity marker at all, so
   # they are never named here and are identified by ancestry alone. That is the
   # whole reason a foreign marker must not outrank ancestry: with markers winning
   # unconditionally, any retained CLAUDECODE would silently rename one of them.
@@ -228,6 +228,17 @@ harness_process_verdict() {  # <pid>
     # inherited launcher value, not an agy identity), so like muse it is
     # detected by ancestry alone.
     agy) echo "comm agy"; return ;;
+    # devin (Devin CLI) is a single compiled ELF binary whose process name is
+    # exactly `devin` for BOTH halves of its two-process model (verified, devin
+    # 3000.10.31: the front end runs `devin ...` and spawns a `devin acp` agent
+    # child, and `ps -o comm=` reports devin for each). Anchored, never *devin*,
+    # so unrelated commands cannot be misread as this harness. devin publishes
+    # no harness-identity marker of its own, so like muse and agy it is detected
+    # by ancestry alone: a live tool subprocess carried no DEVIN_* variable at
+    # all (DEVIN_PROJECT_DIR is set only for hook processes), and the internal
+    # CHISEL_SESSION_DB it does export is a session-database PATH rather than an
+    # identity, the same reason muse's MUSE_CURRENT_SESSION_LOG is not promoted.
+    devin) echo "comm devin"; return ;;
     node*|python*)
       # Bare interpreter: match the harness name in its script path.
       args=$(ps -o args= -p "$pid" 2>/dev/null)
