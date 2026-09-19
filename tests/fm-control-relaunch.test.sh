@@ -119,6 +119,23 @@ case "${1:-}" in
     fi
     exit 0 ;;
   list-windows) [ -f "$D/windows" ] && cat "$D/windows"; exit 0 ;;
+  kill-window)
+    # Model the close the way tmux does it, so an endpoint that was closed
+    # stops appearing in the inventory every later liveness read consults.
+    for a in "$@"; do
+      case "$a" in
+        *:*)
+          name=${a##*:}
+          name=${name#=}
+          printf '%s\n' "$name" >> "$D/killed"
+          if [ -f "$D/windows" ]; then
+            grep -vxF "$name" "$D/windows" > "$D/windows.next" || true
+            mv "$D/windows.next" "$D/windows"
+          fi
+          ;;
+      esac
+    done
+    exit 0 ;;
 esac
 exit 0
 SH
@@ -1231,6 +1248,48 @@ test_post_publication_launch_failure_keeps_the_new_record() {
   pass "fm-control relaunch: post-publication failure keeps the new durable record"
 }
 
+# A launch-then-confirm adapter (devin here; agy and rovo share the same
+# failure path) closes the endpoint it launched into when its readiness gate
+# fails, so a half-started autonomous agent is never left running outside task
+# control. A relaunch ADOPTS the task's recorded endpoint instead of creating
+# one, so that close would destroy the very endpoint the relaunch contract
+# promises to reuse and leave the record pointing at a window that is gone.
+# Live evidence: devin's cloud handshake outran the 30s gate and the failure
+# path took the task's only endpoint with it.
+test_gate_failure_on_relaunch_keeps_the_adopted_endpoint() {
+  local dir out rc
+  dir=$(new_case gatefail rl45)
+  add_ship_task "$dir" rl45 devin
+  # An agent-free endpoint the relaunch may adopt, whose replacement never
+  # reports a session: exactly the readiness-gate timeout observed live.
+  printf 'zsh' > "$dir/fake/command"
+  printf 'zsh' > "$dir/fake/becomes"
+  cat > "$dir/fakebin/devin" <<'SH'
+#!/usr/bin/env bash
+echo "the relaunch fixture never runs devin" >&2
+exit 9
+SH
+  chmod +x "$dir/fakebin/devin"
+
+  out=$(FM_DEVIN_READY_POLLS=2 FM_DEVIN_POLL_INTERVAL=0 \
+    run_spawn "$dir" rl45 --relaunch --harness devin); rc=$?
+  expect_code 1 "$rc" "a readiness-gate timeout should fail the relaunch"$'\n'"$out"
+  assert_contains "$out" "did not start its session" "the gate failure lacked its concrete reason"
+  assert_absent "$dir/fake/killed" \
+    "a relaunch whose readiness gate failed closed the endpoint it had adopted"
+  grep -qxF "fm-rl45" "$dir/fake/windows" \
+    || fail "the adopted endpoint is gone from the backend after a failed relaunch"
+
+  # The consequence that matters: the task is still reachable through the
+  # control plane, so the same relaunch can simply be retried.
+  out=$(FM_DEVIN_READY_POLLS=2 FM_DEVIN_POLL_INTERVAL=0 \
+    run_spawn "$dir" rl45 --relaunch --harness devin); rc=$?
+  expect_code 1 "$rc" "the retry should still reach the readiness gate"$'\n'"$out"
+  assert_contains "$out" "did not start its session" \
+    "the retry refused before the gate, so the failed relaunch left no adoptable endpoint"
+  pass "fm-spawn --relaunch: a readiness-gate failure preserves the endpoint it adopted"
+}
+
 test_stop_transport_failure_reconciles_a_dead_agent() {
   local dir out rc
   dir=$(new_case stopfail rl25)
@@ -1718,6 +1777,7 @@ test_checkpoint_refuses_uninspectable_head_and_status
 test_launch_failure_keeps_the_prior_record_and_reports_it
 test_prepublication_failure_keeps_concurrent_durable_metadata
 test_post_publication_launch_failure_keeps_the_new_record
+test_gate_failure_on_relaunch_keeps_the_adopted_endpoint
 test_stop_transport_failure_reconciles_a_dead_agent
 test_complete_journal_failure_rolls_back_from_durable_phase
 test_prepublication_abort_retires_replacement_wiring_and_busy_state

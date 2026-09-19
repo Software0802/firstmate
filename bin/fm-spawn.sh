@@ -3623,7 +3623,16 @@ rovo_spawn_fail() { # <detail>
 # task control. Mirrors fm-teardown.sh's own generic kill call. On orca only
 # the exact terminal is closed: that stops the CLI while its worktree stays
 # for the record's own teardown, which owns worktree deletion.
+#
+# A relaunch is the one shape where that reasoning does not hold: it ADOPTS the
+# task's recorded endpoint rather than creating one (see the RELAUNCH branch
+# that sets T above), so nothing here is an orphan - the endpoint is still the
+# task's own, named by its published record, and the control plane can reach it
+# to interrupt, exit, or relaunch again. Closing it would destroy the endpoint
+# the relaunch contract promises to reuse (docs/agent-control.md) and strand
+# the task with a record pointing at a window that no longer exists.
 rovo_endpoint_cleanup() {
+  [ "$RELAUNCH" -eq 0 ] || return 0
   if [ "$BACKEND" = orca ]; then
     fm_backend_kill orca "$T" 2>/dev/null || true
     return 0
