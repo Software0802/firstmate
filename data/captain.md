@@ -21,6 +21,7 @@
 - 额度：`quota-axi --tui` 或 Pi `/quota`。
 - Claude Code：`autoCompactWindow = 50000`（`~/.claude/settings.json`）。
 - **视图理解 / 可视化评审：** 全局 skill **`lavish`**（`~/.agents/skills/lavish`，已软链 Claude/Codex/Pi）+ CLI `lavish-axi`。复杂方案/对比/计划/选项/UI 预览 → HTML → `lavish-axi` → `poll`。舰队看板：`/bearings lavish`。
+- **结构化拍板（强制）：** 凡需船长多选/多决策（审查结论、路线、D1–Dn 类）→ **必须** Lavish 可视化确认页，**禁止**仅用聊天 md 表代替。每项选项须附 **一句「为何推荐/为何不推荐」**；默认预选侦察建议，可改后整包提交。侦察 brief 主交付仍可写 `report.md`，拍板面由副手或工人挂 Lavish。
 - **跨船员用户 skill 枢纽：** 真源只放 `~/.agents/skills/`；`~/.claude/skills`、`~/.codex/skills`、`~/.pi/agent/skills` 用**同名软链接**指回枢纽。不把 Firstmate 家 `.agents/skills`（副手内部）整库链给工人。项目专用 skill 仍进该项目 `.agents/skills` 并提交 git。
 
 ## Infrastructure
@@ -39,7 +40,7 @@
 | 项 | 值 |
 | --- | --- |
 | 运行时 | Pi |
-| 模型 | xAI Grok 4.5 · thinking high |
+| 模型 | Devin `swe-2` · thinking max（provider `devin`，由 pi 包 `pi-devin-oauth` 提供，须保持安装并登录） |
 | 职责 | 指挥、监督、中文汇报、分活；不改三项目产品代码 |
 
 ### 船员
