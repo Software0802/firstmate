@@ -72,7 +72,7 @@
 - Codex 不承担日常编码
 - 文档类 → harness **`agy`**（Antigravity；船员/侦察；非 secondmate）
 - **Devin CLI 本机状态：** `devin` 已装、已登录（Max）；Herdr 能识别进程。模型例：`kimi-k3-max`、`swe-2-max`、`fusion-claude-fable-5-1-medium-sidekick-swe-2-medium`。
-- **自动派工缺口：** Firstmate **尚未**把 `devin` 列入已验证船员适配（无 spawn 模板/忙闲/收尾协议），故不能 `harness=devin` 一键派工；临时只能手开 `devin` 或走 raw 未验证启动（不默认）。
+- **`harness=devin` 可直接派工**（本仓库提交 `3425fcb5` 起为已验证船员/侦察适配；AGENTS.md §4 已列入）。仅限船员与侦察，**不可**作 secondmate。
 - 计划 Fusion 默认模型 id（Devin 侧）：`fusion-claude-fable-5-1-medium-sidekick-swe-2-medium`
 - 部署/SW2：`swe-2-max`（TPS 低时少派）
 

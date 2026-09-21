@@ -11,5 +11,5 @@
 - 视图评审：`lavish-axi` 在 PATH；复杂视觉交付用 Lavish，舰队板用 `/bearings lavish`。
 - 用户全局 skill 枢纽：`~/.agents/skills`（Claude/Codex/Pi 目录软链到此）。Firstmate 内部 skill 不共享给工人。
 - UI 优先级：Cursor `kimi-k3-max[context=20k]` → Fable medium → Devin `kimi-k3-max`。
-- Devin CLI 本机已登录 Max；卡点是 Firstmate **无已验证 devin 船员适配**，不是没装 CLI。Fusion 例：`fusion-claude-fable-5-1-medium-sidekick-swe-2-medium`；SW2：`swe-2-max`。
+- Devin CLI 本机已登录 Max（`devin 3000.10.31`）；`harness=devin` 已是已验证船员/侦察适配，可直接派工（不可作 secondmate）。Fusion 例：`fusion-claude-fable-5-1-medium-sidekick-swe-2-medium`；SW2：`swe-2-max`。
 - 多决策拍板：必须 Lavish（带推荐理由），勿只用聊天 md；本偏好见 captain.md。
